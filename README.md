@@ -2,18 +2,13 @@
 
 ## **WordCloud Generator**
 
-WordCloud Generator is a GUI-based application that allows users to easily create WordCloud visualizations from the entered text. This application utilizes Python libraries such as wordcloud, matplotlib, and tkinter to provide an interactive and user-friendly experience.
+**ID:**
 
-WordCloud Generator adalah aplikasi berbasis GUI yang memungkinkan pengguna untuk membuat visualisasi WordCloud dengan mudah dari teks yang dimasukkan. Aplikasi ini menggunakan pustaka Python seperti wordcloud, matplotlib, dan tkinter untuk menyediakan pengalaman yang interaktif dan user-friendly.
+WordCloud adalah teknik analisis teks yang digunakan untuk memvisualisasikan frekuensi kemunculan kata dalam sebuah teks, di mana kata-kata yang lebih sering muncul akan ditampilkan dengan ukuran lebih besar. Teknik ini membantu dalam memahami pola dan tren dalam kumpulan data teks secara cepat dan intuitif. Aplikasi WordCloud Generator berbasis Python dengan GUI mempermudah proses ini dengan menyediakan antarmuka interaktif untuk pengguna. Aplikasi ini mendukung berbagai format teks, termasuk file txt, PDF dan DOC/DOCX, berkat penggunaan modul wordcloud, matplotlib, tkinter, PyPDF2, dan docx. Dengan aplikasi ini, pengguna dapat dengan mudah memasukkan teks, menyesuaikan parameter visualisasi, serta menghasilkan dan menyimpan WordCloud untuk keperluan analisis data, penelitian, atau presentasi.
 
-Fitur Utama:
+**EN:**
 
-✔ Input teks dari file (hanya .txt)
-
-✔ Pengaturan jumlah kata dan ukuran font
-
-✔ Simpan hasil sebagai gambar
-
+WordCloud is a text analysis technique used to visualize the frequency of words in a text, where words that appear more frequently are displayed in a larger size. This technique helps in quickly and intuitively understanding patterns and trends in textual data. The WordCloud Generator application, built with Python and a GUI, simplifies this process by providing an interactive interface for users. It supports various text formats, including txt, PDF and DOC/DOCX files, thanks to the use of wordcloud, matplotlib, tkinter, PyPDF2, and docx modules. With this application, users can easily input text, customize visualization parameters, and generate and save WordClouds for data analysis, research, or presentations.
 
 ## 📥 Download  
 🖥 **[Unduh Aplikasi di Sini](https://github.com/zatailm/wcloudgui/releases)**  

@@ -6,6 +6,8 @@ matplotlib.use("TkAgg")
 import matplotlib.pyplot as plt
 from collections import Counter
 import os
+import PyPDF2
+import docx
 
 # Global variables
 file_path = ""
@@ -16,21 +18,41 @@ additional_stopwords = set()
 def show_about():
     messagebox.showinfo("Tentang Aplikasi", "WordCloud Generator\nVersi: 1.0\n\n(c) 2025 MAZ Ilmam\nhttps://github.com/zatailm/wcloudgui\n\nWordCloud Generator adalah aplikasi berbasis GUI yang dirancang untuk membantu pengguna menganalisis tema dan topik utama dalam suatu teks melalui visualisasi berbasis frekuensi kata. Aplikasi ini menggunakan pustaka Python seperti wordcloud, matplotlib, dan tkinter untuk menyediakan pengalaman yang interaktif dan user-friendly.\n\nLisensi: Gratis untuk penggunaan pribadi dan edukasi")
 
-# Fungsi untuk memilih file teks
+# Fungsi untuk memilih file teks, PDF, atau Word
 def pilih_file():
     global file_path, text_data
-    file_path = filedialog.askopenfilename(filetypes=[("Text Files", "*.txt")])
+    file_path = filedialog.askopenfilename(filetypes=[("Supported Files", "*.txt *.pdf *.doc *.docx")])
     if not file_path:
         return
     try:
-        with open(file_path, "r", encoding="utf-8") as file:
-            text_data = file.read()
+        if file_path.endswith(".txt"):
+            with open(file_path, "r", encoding="utf-8") as file:
+                text_data = file.read()
+        elif file_path.endswith(".pdf"):
+            text_data = extract_text_from_pdf(file_path)
+        elif file_path.endswith(".doc") or file_path.endswith(".docx"):
+            text_data = extract_text_from_word(file_path)
         file_label.config(text=f"File: {os.path.basename(file_path)}", fg="blue", wraplength=450)
         buat_wordcloud_button.config(state="normal")
         simpan_button.config(state="normal")
         statistik_button.config(state="normal")
     except Exception as e:
         messagebox.showerror("Error", f"Terjadi kesalahan: {e}")
+
+# Fungsi untuk mengekstrak teks dari file PDF
+def extract_text_from_pdf(pdf_path):
+    text = ""
+    with open(pdf_path, "rb") as file:
+        reader = PyPDF2.PdfReader(file)
+        for page in reader.pages:
+            text += page.extract_text()
+    return text
+
+# Fungsi untuk mengekstrak teks dari file Word
+def extract_text_from_word(word_path):
+    doc = docx.Document(word_path)
+    text = "\n".join([para.text for para in doc.paragraphs])
+    return text
 
 # Fungsi untuk mendapatkan stopwords
 def ambil_stopwords():
@@ -102,7 +124,8 @@ root = tk.Tk()
 root.title("WordCloud Generator")
 root.geometry("500x500")
 root.configure(bg="#f4f4f4")
-root.resizable(False, False)
+root.minsize(500, 670)
+root.resizable(False, True)
 
 # Frame Utama
 main_frame = tk.Frame(root, bg="white", padx=20, pady=20)
@@ -110,45 +133,45 @@ main_frame.pack(pady=10, padx=10, fill="both", expand=True)
 
 # File Picker
 upload_button = tk.Button(main_frame, text="Pilih File", command=pilih_file, bg="#3498db", fg="white", width=30)
-upload_button.pack()
-file_label = tk.Label(main_frame, text="File .txt: (Belum dipilih)", fg="red", bg="white")
-file_label.pack()
+upload_button.pack(pady=5)
+file_label = tk.Label(main_frame, text="File .txt, .pdf, atau .doc/.docx: (Belum dipilih)", fg="red", bg="white")
+file_label.pack(pady=5)
 
 # Stopwords
 stopword_label = tk.Label(main_frame, text="Stopwords (pisahkan dengan ';'):", bg="white")
-stopword_label.pack()
+stopword_label.pack(pady=5)
 stopword_entry = tk.Entry(main_frame, width=50, bd=1, relief="solid")
-stopword_entry.pack()
+stopword_entry.pack(pady=5)
 
 # Opsi Warna
 color_theme = tk.StringVar(value="viridis")
-tk.Label(main_frame, text="Pilih Warna Tema:", bg="white").pack()
+tk.Label(main_frame, text="Pilih Warna Tema:", bg="white").pack(pady=5)
 color_dropdown = ttk.Combobox(main_frame, textvariable=color_theme, values=plt.colormaps(), state="readonly")
-color_dropdown.pack()
+color_dropdown.pack(pady=5)
 
 # Opsi Font
 font_choice = tk.StringVar(value="Default")
-tk.Label(main_frame, text="Pilih Font:", bg="white").pack()
+tk.Label(main_frame, text="Pilih Font:", bg="white").pack(pady=5)
 font_dropdown = ttk.Combobox(main_frame, textvariable=font_choice, values=["Default", "arial.ttf", "times.ttf", "verdana.ttf"], state="readonly")
-font_dropdown.pack()
+font_dropdown.pack(pady=5)
 
 # Ukuran Kata Minimum
+tk.Label(main_frame, text="Ukuran Kata Minimum:", bg="white").pack(pady=5)
 min_font_size_entry = tk.Entry(main_frame, width=5)
 min_font_size_entry.insert(0, "10")
-tk.Label(main_frame, text="Ukuran Kata Minimum:", bg="white").pack()
-min_font_size_entry.pack()
+min_font_size_entry.pack(pady=5)
 
 # Jumlah Kata Maksimum
+tk.Label(main_frame, text="Jumlah Kata Maksimum:", bg="white").pack(pady=5)
 max_words_entry = tk.Entry(main_frame, width=5)
 max_words_entry.insert(0, "200")
-tk.Label(main_frame, text="Jumlah Kata Maksimum:", bg="white").pack()
-max_words_entry.pack()
+max_words_entry.pack(pady=5)
 
 # Pilih Background Color
+tk.Label(main_frame, text="Pilih Warna Background:", bg="white").pack(pady=5)
 bg_color = tk.StringVar(value="white")
-tk.Label(main_frame, text="Pilih Warna Background:", bg="white").pack()
 bg_color_dropdown = ttk.Combobox(main_frame, textvariable=bg_color, values=["white", "black", "gray", "blue", "red", "yellow"], state="readonly")
-bg_color_dropdown.pack()
+bg_color_dropdown.pack(pady=5)
 
 # Tombol
 button_frame = tk.Frame(main_frame, bg="white")

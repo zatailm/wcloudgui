@@ -16,7 +16,7 @@ additional_stopwords = set()
 
 # Fungsi untuk menampilkan informasi tentang aplikasi
 def show_about():
-    messagebox.showinfo("Tentang Aplikasi", "WordCloud Generator\nVersi: 1.0\n\n(c) 2025 MAZ Ilmam\nhttps://github.com/zatailm/wcloudgui\n\nWordCloud Generator adalah aplikasi berbasis GUI yang dirancang untuk membantu pengguna menganalisis tema dan topik utama dalam suatu teks melalui visualisasi berbasis frekuensi kata. Aplikasi ini menggunakan pustaka Python seperti wordcloud, matplotlib, dan tkinter untuk menyediakan pengalaman yang interaktif dan user-friendly.\n\nLisensi: Gratis untuk penggunaan pribadi dan edukasi")
+    messagebox.showinfo("Tentang Aplikasi", "WordCloud Generator\nVersi: 1.1\n\n(c) 2025 MAZ Ilmam\nhttps://github.com/zatailm/wcloudgui\n\nWordCloud Generator adalah aplikasi berbasis GUI yang dirancang untuk membantu pengguna menganalisis tema dan topik utama dalam suatu teks melalui visualisasi berbasis frekuensi kata. Aplikasi ini menggunakan pustaka Python seperti wordcloud, matplotlib, dan tkinter untuk menyediakan pengalaman yang interaktif dan user-friendly.\n\nLisensi: Gratis untuk penggunaan pribadi dan edukasi")
 
 # Fungsi untuk memilih file teks, PDF, atau Word
 def pilih_file():

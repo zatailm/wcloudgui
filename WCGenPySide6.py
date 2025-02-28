@@ -265,7 +265,6 @@ class WordCloudGenerator(QMainWindow):
 
         dialog = QDialog(self)
         dialog.setWindowTitle("About")
-        dialog.setFixedSize(400, 300) 
 
         layout = QVBoxLayout()
         text_edit = QTextEdit()
@@ -278,7 +277,7 @@ class WordCloudGenerator(QMainWindow):
         layout.addWidget(close_button)
 
         dialog.setLayout(layout)
-        dialog.exec()
+        dialog.show()
 
     def pilih_file(self):
         options = QFileDialog.Options()
@@ -336,9 +335,8 @@ class WordCloudGenerator(QMainWindow):
         sorted_word_counts = sorted(word_counts.items(), key=lambda item: item[1], reverse=True)
         
         dialog = QDialog(self)
-        dialog.setWindowTitle("Statistics")
-        dialog.setFixedWidth(320)
-
+        dialog.setWindowTitle("Word Count")
+ 
         layout = QVBoxLayout()
 
         table = QTableWidget()
@@ -356,7 +354,7 @@ class WordCloudGenerator(QMainWindow):
         layout.addWidget(close_button)
 
         dialog.setLayout(layout)
-        dialog.exec()
+        dialog.show()
 
     def buat_wordcloud(self):
         if not self.text_data:
@@ -487,7 +485,7 @@ class WordCloudGenerator(QMainWindow):
         layout.addWidget(close_button)
 
         dialog.setLayout(layout)
-        dialog.exec()
+        dialog.show()
 
 if __name__ == '__main__':
     app = QApplication(sys.argv)

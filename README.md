@@ -10,5 +10,7 @@ WordCloud adalah teknik analisis teks yang digunakan untuk memvisualisasikan fre
 
 WordCloud is a text analysis technique used to visualize the frequency of words in a text, where words that appear more frequently are displayed in a larger size. This technique helps in quickly and intuitively understanding patterns and trends in textual data. The WordCloud Generator application, built with Python and a GUI, simplifies this process by providing an interactive interface for users. It supports various text formats, including txt, PDF and DOC/DOCX files, thanks to the use of wordcloud, matplotlib, tkinter, PyPDF2, and docx modules. With this application, users can easily input text, customize visualization parameters, and generate and save WordClouds for data analysis, research, or presentations.
 
+![wcgen](https://github.com/user-attachments/assets/c19d3622-0639-4234-b96f-c570c7dba29e)
+
 ## 📥 Download  
 🖥 **[Unduh Aplikasi di Sini](https://github.com/zatailm/wcloudgui/releases)**  

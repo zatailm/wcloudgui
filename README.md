@@ -13,4 +13,4 @@ WordCloud is a text analysis technique used to visualize the frequency of words 
 ![wcgen](https://github.com/user-attachments/assets/c19d3622-0639-4234-b96f-c570c7dba29e)
 
 ## 📥 Download  
-🖥 **[Unduh Aplikasi di Sini](https://github.com/zatailm/wcloudgui/releases)**  
+🖥 **[Download here/unduh di sini](https://github.com/zatailm/wcloudgui/releases)**  

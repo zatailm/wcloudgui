@@ -1,4 +1,5 @@
 import sys
+import asyncio
 from PySide6.QtWidgets import QApplication, QMainWindow, QFileDialog, QMessageBox, QLabel, QPushButton, QVBoxLayout, QGridLayout, QWidget, QLineEdit, QComboBox, QSpinBox, QDialog, QTextEdit, QProgressBar, QFrame, QColorDialog, QInputDialog, QTableWidget, QTableWidgetItem
 from PySide6.QtCore import QThread, Signal, Qt
 from PySide6.QtGui import QIcon
@@ -6,11 +7,16 @@ from wordcloud import WordCloud, STOPWORDS
 import matplotlib.pyplot as plt
 from collections import Counter
 import os
-import PyPDF2
+import pypdf
 import docx
 from PIL import Image
 import numpy as np
 import json
+from vaderSentiment.vaderSentiment import SentimentIntensityAnalyzer, SentiText
+from flair.models import TextClassifier
+from flair.data import Sentence
+from textblob import TextBlob
+from googletrans import Translator
 
 class FileLoaderThread(QThread):
     file_loaded = Signal(str, str)
@@ -35,7 +41,7 @@ class FileLoaderThread(QThread):
     def extract_text_from_pdf(self, pdf_path):
         text = ""
         with open(pdf_path, "rb") as file:
-            reader = PyPDF2.PdfReader(file)
+            reader = pypdf.PdfReader(file)
             for page in reader.pages:
                 text += page.extract_text()
         return text
@@ -44,6 +50,135 @@ class FileLoaderThread(QThread):
         doc = docx.Document(word_path)
         text = "\n".join([para.text for para in doc.paragraphs])
         return text
+
+class CustomVaderSentimentIntensityAnalyzer(SentimentIntensityAnalyzer):
+    def __init__(self, lexicon_file="vader_lexicon.txt", custom_lexicon_file=None):
+        super().__init__(lexicon_file)
+        if custom_lexicon_file:
+            self.load_custom_lexicon(custom_lexicon_file)
+
+    def load_custom_lexicon(self, custom_lexicon_file):
+        with open(custom_lexicon_file, 'r', encoding='utf-8') as file:
+            for line in file:
+                parts = line.strip().split('\t')
+                if len(parts) == 2:
+                    word, measure = parts
+                    try:
+                        self.lexicon[word] = float(measure)
+                    except ValueError:
+                        print(f"Skipping line with invalid measure: {line}")
+
+    async def translate_text(self, text, src, dest):
+        translator = Translator()
+        translation = await translator.translate(text, src=src, dest=dest)
+        return translation.text
+
+    def polarity_scores(self, text, language='en'):
+        if language == 'id':
+            loop = asyncio.new_event_loop()
+            asyncio.set_event_loop(loop)
+            translated_text = loop.run_until_complete(self.translate_text(text, src='id', dest='en'))
+            loop.close()
+            return super().polarity_scores(translated_text)
+        return super().polarity_scores(text)
+
+class SentimentAnalysisThread(QThread):
+    sentiment_analyzed = Signal(dict)
+
+    def __init__(self, text_data, sentiment_mode, vader_analyzer, flair_classifier, flair_classifier_indonesian):
+        super().__init__()
+        self.text_data = text_data
+        self.sentiment_mode = sentiment_mode
+        self.vader_analyzer = vader_analyzer
+        self.flair_classifier = flair_classifier
+        self.flair_classifier_indonesian = flair_classifier_indonesian
+
+    def run(self):
+        result = {
+            "positive_score": 0,
+            "neutral_score": 0,
+            "negative_score": 0,
+            "compound_score": 0,
+            "sentiment_label": "N/A",
+            "subjectivity": "N/A"
+        }
+
+        if self.sentiment_mode == "TextBlob":
+            blob = TextBlob(self.text_data)
+            sentiment = blob.sentiment
+            result["positive_score"] = sentiment.polarity if sentiment.polarity > 0 else 0
+            result["negative_score"] = -sentiment.polarity if sentiment.polarity < 0 else 0
+            result["neutral_score"] = 1 - abs(sentiment.polarity)
+            result["compound_score"] = sentiment.polarity
+            result["sentiment_label"] = "POSITIVE" if sentiment.polarity > 0 else "NEGATIVE" if sentiment.polarity < 0 else "NEUTRAL"
+            result["subjectivity"] = sentiment.subjectivity
+        elif self.sentiment_mode == "TextBlob (Bahasa Indonesia)":
+            loop = asyncio.new_event_loop()
+            asyncio.set_event_loop(loop)
+            translated_text = loop.run_until_complete(self.vader_analyzer.translate_text(self.text_data, src='id', dest='en'))
+            loop.close()
+            blob = TextBlob(translated_text)
+            sentiment = blob.sentiment
+            result["positive_score"] = sentiment.polarity if sentiment.polarity > 0 else 0
+            result["negative_score"] = -sentiment.polarity if sentiment.polarity < 0 else 0
+            result["neutral_score"] = 1 - abs(sentiment.polarity)
+            result["compound_score"] = sentiment.polarity
+            result["sentiment_label"] = "POSITIVE" if sentiment.polarity > 0 else "NEGATIVE" if sentiment.polarity < 0 else "NEUTRAL"
+            result["subjectivity"] = sentiment.subjectivity
+        elif self.sentiment_mode == "VADER":
+            sentiment = self.vader_analyzer.polarity_scores(self.text_data)
+            result["positive_score"] = sentiment['pos']
+            result["negative_score"] = sentiment['neg']
+            result["neutral_score"] = sentiment['neu']
+            result["compound_score"] = sentiment['compound']
+            if result["compound_score"] >= 0.05:
+                result["sentiment_label"] = "POSITIVE"
+            elif result["compound_score"] <= -0.05:
+                result["sentiment_label"] = "NEGATIVE"
+            else:
+                result["sentiment_label"] = "NEUTRAL"
+        elif self.sentiment_mode == "VADER (Bahasa Indonesia)":
+            sentiment = self.vader_analyzer.polarity_scores(self.text_data, language='id')
+            result["positive_score"] = sentiment['pos']
+            result["negative_score"] = sentiment['neg']
+            result["neutral_score"] = sentiment['neu']
+            result["compound_score"] = sentiment['compound']
+            if result["compound_score"] >= 0.05:
+                result["sentiment_label"] = "POSITIVE"
+            elif result["compound_score"] <= -0.05:
+                result["sentiment_label"] = "NEGATIVE"
+            else:
+                result["sentiment_label"] = "NEUTRAL"
+        elif self.sentiment_mode == "Flair":
+            sentence = Sentence(self.text_data)
+            self.flair_classifier.predict(sentence)
+            sentiment = sentence.labels[0]
+            result["compound_score"] = sentiment.score
+            result["sentiment_label"] = sentiment.value
+            if sentiment.value == 'POSITIVE':
+                result["positive_score"] = sentiment.score
+                result["negative_score"] = 0
+                result["neutral_score"] = 1 - sentiment.score
+            else:
+                result["positive_score"] = 0
+                result["negative_score"] = sentiment.score
+                result["neutral_score"] = 1 - sentiment.score
+        elif self.sentiment_mode == "Flair (Bahasa Indonesia)":
+            sentence = Sentence(self.text_data)
+            self.flair_classifier_indonesian.predict(sentence)
+            sentiment = sentence.labels[0]
+            result["compound_score"] = sentiment.score
+            result["sentiment_label"] = sentiment.value
+            if sentiment.value == 'POSITIVE':
+                result["positive_score"] = sentiment.score
+                result["negative_score"] = 0
+                result["neutral_score"] = 1 - sentiment.score
+            else:
+                result["positive_score"] = 0
+                result["negative_score"] = sentiment.score
+                result["neutral_score"] = 1 - sentiment.score
+
+        self.sentiment_analyzed.emit(result)
 
 class WordCloudGenerator(QMainWindow):
     def __init__(self):
@@ -54,6 +189,12 @@ class WordCloudGenerator(QMainWindow):
         self.additional_stopwords = set()
         self.custom_color_palettes = {}
         self.current_figure = None
+        self.sentiment_mode = "VADER"  # Default sentiment analysis mode
+        # Load custom VADER analyzer with Indonesian lexicon from a file
+        self.vader_analyzer = CustomVaderSentimentIntensityAnalyzer(custom_lexicon_file='resources/taggers/sentiment-indonesian/indonesian_lexicon.txt')
+        # Load Flair models
+        self.flair_classifier = TextClassifier.load('sentiment')  # Use built-in default English model
+        self.flair_classifier_indonesian = TextClassifier.load('resources/taggers/sentiment-indonesian/final-model.pt')
         self.initUI()
 
     def initUI(self):
@@ -123,7 +264,7 @@ class WordCloudGenerator(QMainWindow):
         self.color_theme_label = QLabel('Color Theme:', self)
         layout.addWidget(self.color_theme_label, 6, 0, 1, 1)
         self.color_theme = QComboBox(self)
-        self.color_theme.setFixedWidth(240)
+        self.color_theme.setFixedSize(190,30)
         self.color_theme.addItems(plt.colormaps())
         self.color_theme.setToolTip('Select a color theme for the word cloud')
         layout.addWidget(self.color_theme, 6, 1, 1, 2)
@@ -137,6 +278,7 @@ class WordCloudGenerator(QMainWindow):
         self.font_choice_label = QLabel('Font Choice:', self)
         layout.addWidget(self.font_choice_label, 8, 0, 1, 1)
         self.font_choice = QComboBox(self)
+        self.font_choice.setFixedHeight(30)
         self.font_choice.addItems(["Default", "arial.ttf", "times.ttf", "verdana.ttf"])
         self.font_choice.setToolTip('Select a font for the word cloud')
         layout.addWidget(self.font_choice, 8, 1, 1, 2)
@@ -144,12 +286,14 @@ class WordCloudGenerator(QMainWindow):
         self.min_font_size_label = QLabel('Minimum Font Size:', self)
         layout.addWidget(self.min_font_size_label, 9, 0, 1, 1)
         self.min_font_size_entry = QSpinBox(self)
+        self.min_font_size_entry.setFixedHeight(30)
         self.min_font_size_entry.setValue(10)
         layout.addWidget(self.min_font_size_entry, 9, 1, 1, 2)
 
         self.max_words_label = QLabel('Maximum Words:', self)
         layout.addWidget(self.max_words_label, 10, 0, 1, 1)
         self.max_words_entry = QSpinBox(self)
+        self.max_words_entry.setFixedHeight(30)
         self.max_words_entry.setMaximum(10000)
         self.max_words_entry.setValue(200) 
         layout.addWidget(self.max_words_entry, 10, 1, 1, 2)
@@ -157,7 +301,7 @@ class WordCloudGenerator(QMainWindow):
         self.bg_color_label = QLabel('Background Color:', self)
         layout.addWidget(self.bg_color_label, 11, 0, 1, 1)
         self.bg_color = QComboBox(self)
-        self.bg_color.setFixedWidth(240)
+        self.bg_color.setFixedSize(190,30)
         self.bg_color.addItems(["white", "black", "gray", "blue", "red", "yellow"])
         self.bg_color.setToolTip('Select a background color for the word cloud')
         layout.addWidget(self.bg_color, 11, 1, 1, 2)
@@ -171,16 +315,16 @@ class WordCloudGenerator(QMainWindow):
         self.mask_label = QLabel('Mask Image:', self)
         layout.addWidget(self.mask_label, 12, 0, 1, 1)
         self.mask_button = QPushButton('Mask Image', self)
-        self.mask_button.setFixedHeight(30) 
+        self.mask_button.setFixedSize(140, 30) 
         self.mask_button.setToolTip('Select an image to use as a mask for the word cloud')
         self.mask_button.clicked.connect(self.pilih_mask)
         layout.addWidget(self.mask_button, 12, 1, 1, 1)
 
         self.reset_mask_button = QPushButton('Remove Mask', self)
-        self.reset_mask_button.setFixedHeight(30)
+        self.reset_mask_button.setFixedSize(140, 30)
         self.reset_mask_button.setToolTip('Remove the selected mask image')
         self.reset_mask_button.clicked.connect(self.reset_mask)
-        layout.addWidget(self.reset_mask_button, 12, 2, 1, 1)
+        layout.addWidget(self.reset_mask_button, 12, 2, 1, 1, Qt.AlignRight)
 
         self.mask_path_label = QLabel('Mask: default (rectangle)', self)
         layout.addWidget(self.mask_path_label, 13, 0, 1, 3)
@@ -210,31 +354,54 @@ class WordCloudGenerator(QMainWindow):
         self.wordcloud_progress_bar.setVisible(False)
         layout.addWidget(self.wordcloud_progress_bar, 15, 0, 1, 3)
 
+        self.sentiment_button = QPushButton('Analyze Sentiment', self)
+        self.sentiment_button.setFixedHeight(30)
+        self.sentiment_button.setToolTip('Analyze the sentiment of the text')
+        self.sentiment_button.clicked.connect(self.analyze_sentiment)
+        self.sentiment_button.setEnabled(False)
+        layout.addWidget(self.sentiment_button, 16, 0, 1, 3)  # Adjusted position
+
+        self.sentiment_mode_label = QLabel('Sentiment Analysis Mode:', self)
+        layout.addWidget(self.sentiment_mode_label, 18, 0, 1, 1)
+        self.sentiment_mode_combo = QComboBox(self)
+        self.sentiment_mode_combo.setFixedSize(240,30)
+        self.sentiment_mode_combo.addItems(["TextBlob", "TextBlob (Bahasa Indonesia)", "VADER", "VADER (Bahasa Indonesia)", "Flair", "Flair (Bahasa Indonesia)"])
+        self.sentiment_mode_combo.setToolTip('Select sentiment analysis mode')
+        self.sentiment_mode_combo.currentTextChanged.connect(self.change_sentiment_mode)
+        layout.addWidget(self.sentiment_mode_combo, 18, 1, 1, 1)
+
+        self.sentiment_mode_info_button = QPushButton('?', self)
+        self.sentiment_mode_info_button.setFixedSize(30, 30)
+        self.sentiment_mode_info_button.setToolTip('Show description for each sentiment analysis mode')
+        self.sentiment_mode_info_button.clicked.connect(self.show_sentiment_mode_info)
+        layout.addWidget(self.sentiment_mode_info_button, 18, 2, 1, 1, Qt.AlignRight)
+
+        # Adjust positions of other buttons
         self.statistik_button = QPushButton('Word Count', self)
         self.statistik_button.setFixedHeight(30)
         self.statistik_button.setToolTip('Show word frequency statistics')
         self.statistik_button.clicked.connect(self.tampilkan_statistik)
         self.statistik_button.setEnabled(False)
-        layout.addWidget(self.statistik_button, 16, 0, 1, 3)
+        layout.addWidget(self.statistik_button, 19, 0, 1, 3)
 
         self.simpan_button = QPushButton('Save WordCloud', self)
         self.simpan_button.setFixedHeight(30) 
         self.simpan_button.setToolTip('Save the generated word cloud')
         self.simpan_button.clicked.connect(self.simpan_wordcloud)
         self.simpan_button.setEnabled(False)
-        layout.addWidget(self.simpan_button, 17, 0, 1, 3)
+        layout.addWidget(self.simpan_button, 20, 0, 1, 3)
 
         self.about_button = QPushButton('About', self)
         self.about_button.setFixedSize(150, 30)
         self.about_button.setToolTip('Show information about the application')
         self.about_button.clicked.connect(self.show_about)
-        layout.addWidget(self.about_button, 18, 0, 1, 3)
+        layout.addWidget(self.about_button, 21, 0, 1, 3)
 
         self.quit_button = QPushButton('Quit', self)
         self.quit_button.setFixedHeight(30) 
         self.quit_button.setToolTip('Quit WCGen :(')
         self.quit_button.clicked.connect(self.close)
-        layout.addWidget(self.quit_button, 18, 2, 1, 1)
+        layout.addWidget(self.quit_button, 21, 2, 1, 1)
 
         container = QWidget()
         container.setLayout(layout)
@@ -304,6 +471,7 @@ class WordCloudGenerator(QMainWindow):
             self.simpan_button.setEnabled(True)
             self.statistik_button.setEnabled(True)
             self.view_text_button.setEnabled(True)
+            self.sentiment_button.setEnabled(True)
         else:
             QMessageBox.critical(self, "Error", text_data)
 
@@ -477,6 +645,101 @@ class WordCloudGenerator(QMainWindow):
         layout = QVBoxLayout()
         text_edit = QTextEdit()
         text_edit.setPlainText(self.text_data)
+        text_edit.setReadOnly(True)
+        layout.addWidget(text_edit)
+
+        close_button = QPushButton("Close")
+        close_button.clicked.connect(dialog.accept)
+        layout.addWidget(close_button)
+
+        dialog.setLayout(layout)
+        dialog.show()
+
+    def analyze_sentiment(self):
+        if not self.text_data:
+            QMessageBox.critical(self, "Error", "No text data available for sentiment analysis.")
+            return
+
+        self.progress_bar.setVisible(True)
+
+        self.sentiment_thread = SentimentAnalysisThread(
+            self.text_data, self.sentiment_mode, self.vader_analyzer, self.flair_classifier, self.flair_classifier_indonesian
+        )
+        self.sentiment_thread.sentiment_analyzed.connect(self.on_sentiment_analyzed)
+        self.sentiment_thread.start()
+
+    def on_sentiment_analyzed(self, result):
+        self.progress_bar.setVisible(False)
+        text_length = len(self.text_data)
+        word_count = len(self.text_data.split())
+        char_count_excl_spaces = len(self.text_data.replace(" ", ""))
+        avg_word_length = char_count_excl_spaces / word_count if word_count > 0 else 0
+        most_frequent_words = self.get_most_frequent_words(self.text_data, 5)
+
+        self.show_sentiment_analysis(
+            result["positive_score"], result["neutral_score"], result["negative_score"],
+            result["compound_score"], result["sentiment_label"], text_length, result["subjectivity"],
+            word_count, char_count_excl_spaces, avg_word_length, most_frequent_words
+        )
+
+    def show_sentiment_analysis(self, positive_score, neutral_score, negative_score, compound_score, sentiment_label, text_length, subjectivity, word_count, char_count_excl_spaces, avg_word_length, most_frequent_words):
+        dialog = QDialog(self)
+        dialog.setWindowTitle("Sentiment Analysis")
+        dialog.setMinimumSize(300, 200)
+        dialog.setSizeGripEnabled(True)  # Allow resizing
+
+        layout = QVBoxLayout()
+        text_edit = QTextEdit()
+        text_edit.setPlainText(
+            f"Sentiment Label: {sentiment_label}\n"
+            f"Positive Sentiment: {positive_score:.2f}\n"
+            f"Neutral Sentiment: {neutral_score:.2f}\n"
+            f"Negative Sentiment: {negative_score:.2f}\n"
+            f"Compound Score: {compound_score:.2f}\n"
+            f"Text Length: {text_length} characters\n"
+            f"Word Count: {word_count}\n"
+            f"Character Count (excluding spaces): {char_count_excl_spaces}\n"
+            f"Average Word Length: {avg_word_length:.2f}\n"
+            f"Most Frequent Words: {', '.join(most_frequent_words)}\n"
+            f"Subjectivity: {subjectivity}"
+        )
+        text_edit.setReadOnly(True)
+        layout.addWidget(text_edit)
+
+        close_button = QPushButton("Close")
+        close_button.clicked.connect(dialog.accept)
+        layout.addWidget(close_button)
+
+        dialog.setLayout(layout)
+        dialog.show()
+
+    def get_most_frequent_words(self, text, n):
+        stopwords = self.ambil_stopwords().union(STOPWORDS)
+        words = [word.lower() for word in text.split() if word.lower() not in stopwords]
+        word_counts = Counter(words)
+        most_common = word_counts.most_common(n)
+        return [word for word, count in most_common]
+
+    def change_sentiment_mode(self, mode):
+        self.sentiment_mode = mode
+        if mode == "Flair" and self.flair_classifier is None:
+            self.flair_classifier = TextClassifier.load('resources/taggers/sentiment-indonesian/final-model.pt')
+
+    def show_sentiment_mode_info(self):
+        description = (
+            "TextBlob: Suitable for formal text and classic NLP analysis, such as articles, reports, and long documents.\n\n"
+            "VADER: Designed for informal text, such as social media, comments, tweets, and short reviews. Fast and effective for rule-based sentiment analysis.\n\n"
+            "Flair: Ideal for long texts and advanced sentiment analysis, such as product reviews, professional documents, or research-based deep learning."
+        )
+
+        dialog = QDialog(self, Qt.Window)
+        dialog.setWindowTitle("Sentiment Analysis Mode Descriptions")
+        dialog.setMinimumSize(300, 200)
+        dialog.setSizeGripEnabled(True)  # Allow resizing
+
+        layout = QVBoxLayout()
+        text_edit = QTextEdit()
+        text_edit.setPlainText(description)
         text_edit.setReadOnly(True)
         layout.addWidget(text_edit)
 

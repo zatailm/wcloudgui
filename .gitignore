@@ -1,5 +1,4 @@
-build/
-dist/
-temp/
-Output/
-WCGen_Installer.iss
+/_ign
+/dist
+/res/id-test-bert.pt
+/src/main.py

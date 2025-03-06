@@ -1,5 +1,0 @@
-wordcloud
-matplotlib
-PyPDF2
-python-docx
-tkinter

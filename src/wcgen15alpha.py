@@ -21,10 +21,10 @@ from textblob import TextBlob
 import socket
 from googletrans import Translator
 import langdetect
-from pathlib import Path
+#from pathlib import Path
 
-BASE_DIR = Path(__file__).resolve().parent 
-ICON_PATH = BASE_DIR.parent / "res" / "gs.ico" 
+#BASE_DIR = Path(__file__).resolve().parent 
+#ICON_PATH = BASE_DIR.parent / "res" / "gs.ico" 
 
 class FileLoaderThread(QThread):
     file_loaded = Signal(str, str)
@@ -320,7 +320,8 @@ class WordCloudGenerator(QMainWindow):
     def initUI(self):
         self.setWindowTitle('WCGen')
         self.setFixedSize(500, 600)
-        self.setWindowIcon(QIcon(str(ICON_PATH)))
+        #self.setWindowIcon(QIcon(str(ICON_PATH)))
+        self.setWindowIcon(QIcon('D:/python_proj/wcloudgui/res/gs.ico'))
 
         layout = QGridLayout()
 
@@ -732,7 +733,7 @@ class WordCloudGenerator(QMainWindow):
 
             plt.ion()
             
-            self.current_figure = plt.figure(figsize=(6, 3))
+            self.current_figure = plt.figure(figsize=(10, 5))
             plt.imshow(wc, interpolation="bilinear")
             plt.axis("off")
             plt.show()

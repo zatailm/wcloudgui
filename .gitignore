@@ -1,4 +1,9 @@
 /_ign
 /dist
+dist/
+/build
+build/
 /res/id-test-bert.pt
 /src/main.py
+/src/wcgen15.spec
+/src/testing.py

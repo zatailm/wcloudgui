@@ -7,7 +7,7 @@ from PySide6.QtWidgets import (QApplication, QMainWindow, QFileDialog, QMessageB
                               QLabel, QPushButton, QVBoxLayout, QGridLayout, QWidget,
                               QLineEdit, QComboBox, QSpinBox, QDialog, QTextEdit,
                               QProgressBar, QFrame, QColorDialog, QInputDialog,
-                              QTableWidget, QTableWidgetItem, QTextBrowser)
+                              QTableWidget, QTableWidgetItem, QCheckBox)
 from PySide6.QtCore import QThread, Signal, Qt, QTimer
 from PySide6.QtGui import QIcon
 import matplotlib
@@ -764,7 +764,6 @@ class WordCloudGenerator(QMainWindow):
         self.active_threads.append(self.sentiment_thread)
         self.sentiment_thread.start()
 
-
     # Keep all other methods identical to original below this point
     def stop_all_processes(self):
             for thread in self.active_threads:
@@ -789,43 +788,29 @@ class WordCloudGenerator(QMainWindow):
 
     def show_about(self):
         about_text = (
-            "<h2>WCGen - WordCloud Generator</h2>"
-            "<p><b>Version:</b> 1.5</p>"
-            "<p>&copy; 2025 MAZ Ilmam</p>"
-            '<p><a href="https://github.com/zatailm/wcloudgui">GitHub Repository</a></p>'
-            "<h3>About WCGen</h3>"
-            "<p>WCGen is a powerful and user-friendly application designed for generating word clouds from text data. "
-            "It helps users quickly visualize word frequency, making it useful for text analysis, research, and presentations.</p>"
-            "<h3>Features</h3>"
-            "<ul>"
-            "<li>Supports multiple file formats: <b>TXT, PDF, DOC/DOCX, CSV, XLSX</b></li>"
-            "<li>Customizable visualization: <b>colors, fonts, mask images, and themes</b></li>"
-            "<li>Stopword filtering for cleaner word clouds</li>"
-            "<li>Easy export and saving options</li>"
-            "<li>Optional sentiment analysis using <b>TextBlob, VADER, and Flair</b></li>"
-            "</ul>"
-            "<h3>License</h3>"
-            "<p>WCGen is free for personal and educational use. For commercial use, please refer to the licensing terms.</p>"
+            "WCGen\nVersion: 1.5\n\n(c) 2025 MAZ Ilmam\nhttps://github.com/zatailm/wcloudgui\n\n"
+            "WordCloud is a text analysis technique used to visualize the frequency of words in a text, "
+            "where words that appear more frequently are displayed in a larger size. This technique helps "
+            "in quickly and intuitively understanding patterns and trends in textual data. The WCGen application, built with Python and a GUI, simplifies this process by providing an "
+            "interactive interface for users. It supports various text formats, including txt, PDF and "
+            "DOC/DOCX files, thanks to the use of wordcloud, matplotlib, tkinter, PyPDF2, and docx modules. "
+            "With this application, users can easily input text, customize visualization parameters, and "
+            "generate and save WordClouds for data analysis, research, or presentations.\n\n"
+            "License: free for personal and educational purposes."
         )
 
         dialog = QDialog(self)
-        dialog.setWindowTitle("About WCGen")
+        dialog.setWindowTitle("About")
         layout = QVBoxLayout()
-        
-        text_browser = QTextBrowser()
-        text_browser.setHtml(about_text)
-        text_browser.setOpenExternalLinks(True)
-        text_browser.setReadOnly(True)
-        
-        layout.addWidget(text_browser)
-        
+        text_edit = QTextEdit()
+        text_edit.setPlainText(about_text)
+        text_edit.setReadOnly(True)
+        layout.addWidget(text_edit)
         close_button = QPushButton("Close")
         close_button.clicked.connect(dialog.accept)
         layout.addWidget(close_button)
-        
         dialog.setLayout(layout)
-        dialog.exec()
-
+        dialog.show()
 
     def pilih_file(self):
         options = QFileDialog.Options()

@@ -39,7 +39,7 @@ pip install -r src/requirements.txt
 ```
 Or manually:
 ```sh  
-pip install PySide6==6.0.2.1 matplotlib==3.10.0 wordcloud==1.9.4 pypdf==5.3.0 docx==1.1.2 pillow==11.1.0 numpy==1.26.4 pandas==2.2.3 textblob==0.19.0 vaderSentiment==3.3.2 flair==0.15.1 googletrans==3.4.0 langdetect==1.0.9 
+pip install PySide6==6.0.2.1 matplotlib==3.10.0 wordcloud==1.9.4 pypdf==5.3.0 docx==1.1.2 pillow==11.1.0 numpy==1.26.4 pandas==2.2.3 textblob==0.19.0 vaderSentiment==3.3.2 flair==0.15.1 langdetect==1.0.9 qasync>=0.23.0 deep-translator>=1.9.2
 ```
 
 ### **🔹 Running WCGen**  
@@ -98,7 +98,7 @@ WCGen uses the following libraries:
 - **PyPDF2, python-docx, pandas** → File handling  
 - **VADER, TextBlob, Flair** → Sentiment analysis  
 - **Langdetect** → Language detection
-- **googletrans** → Translate service
+- **deep-translator** → Translate service
 
 ---
 

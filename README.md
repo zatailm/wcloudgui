@@ -1,10 +1,7 @@
-[![DOI](https://zenodo.org/badge/937892074.svg)](https://doi.org/10.5281/zenodo.14916874)
 # WCGen - WordCloud Generator  
-![WCGen](https://img.shields.io/badge/version-1.5-blue)  
-![License](https://img.shields.io/badge/license-Personal%20%26%20Educational-green)  
-![Python](https://img.shields.io/badge/Python-3.12.3-blue)  
-![Miniconda](https://img.shields.io/badge/Miniconda-Supported-orange)  
-![GUI](https://img.shields.io/badge/GUI-PySide6-yellow)  
+[![DOI](https://zenodo.org/badge/937892074.svg)](https://doi.org/10.5281/zenodo.14916874)
+
+![WCGen](https://img.shields.io/badge/version-1.5-blue)  ![License](https://img.shields.io/badge/license-Personal%20%26%20Educational-green)  ![Python](https://img.shields.io/badge/Python-3.12.3-blue)  ![Miniconda](https://img.shields.io/badge/Miniconda-Supported-orange)  ![GUI](https://img.shields.io/badge/GUI-PySide6-yellow)  
 
 ## **📌 Introduction**  
 **WCGen** (WordCloud Generator) is a powerful and user-friendly desktop application that allows users to generate **customizable word clouds** from various text sources.  
@@ -73,7 +70,7 @@ The `.exe` was created using **PyInstaller**:
 ```sh  
 pyinstaller src/wcgen15beta.spec  
 ```
-**⚠️ IMPORTANT NOTE ⚠️**  
+### **⚠️ IMPORTANT NOTE ⚠️**  
 WCGen **1.5**, which includes the new **Sentiment Analysis feature** along with additional new features, is currently in **beta testing**.  
 At this time, the **compiled EXE version for WCGen 1.5 is not yet available**. The latest available EXE version is **WCGen 1.3**.  
 
@@ -100,7 +97,8 @@ WCGen uses the following libraries:
 - **NumPy & PIL** → Image processing  
 - **PyPDF2, python-docx, pandas** → File handling  
 - **VADER, TextBlob, Flair** → Sentiment analysis  
-- **Langdetect** → Language detection  
+- **Langdetect** → Language detection
+- **googletrans** → Translate service
 
 ---
 

@@ -17,11 +17,7 @@ import numpy as np
 from PIL import Image
 import socket
 
-# Deferred imports will be loaded when needed in specific methods
-# Removed: pypdf, docx, pandas, vaderSentiment, flair, textblob, googletrans, langdetect
-
-class StartupThread(QThread):
-    """Preload heavy but common dependencies in background"""
+class StartupThread(QThread):          # ✅ Thread untuk memuat dependensi berat tetapi umum di latar belakang
     def run(self):
         try:
             import pypdf
@@ -30,14 +26,14 @@ class StartupThread(QThread):
         except Exception as e:
             pass
 
-class FileLoaderThread(QThread):
+class FileLoaderThread(QThread):        # ✅ Thread untuk memuat file teks dari berbagai format
     file_loaded = Signal(str, str)
 
-    def __init__(self, file_path):
+    def __init__(self, file_path):      # ✅ Inisialisasi path file
         super().__init__()
         self.file_path = file_path
 
-    def run(self):
+    def run(self):                      # ✅ Fungsi untuk memuat file
         try:
             if self.file_path.endswith(".txt"):
                 with open(self.file_path, "r", encoding="utf-8") as file:
@@ -57,7 +53,7 @@ class FileLoaderThread(QThread):
         except Exception as e:
             self.file_loaded.emit("", f"Error loading file: {e}")
 
-    def extract_text_from_pdf(self, pdf_path):
+    def extract_text_from_pdf(self, pdf_path):          # ✅ Fungsi untuk mengekstrak teks dari PDF
         import pypdf  # Local import
         text = ""
         try:
@@ -69,7 +65,7 @@ class FileLoaderThread(QThread):
             return f"PDF Error: {str(e)}"
         return text
 
-    def extract_text_from_word(self, word_path):
+    def extract_text_from_word(self, word_path):        # ✅ Fungsi untuk mengekstrak teks dari Word
         import docx  # Local import
         try:
             doc = docx.Document(word_path)
@@ -77,7 +73,7 @@ class FileLoaderThread(QThread):
         except Exception as e:
             return f"Word Error: {str(e)}"
 
-    def extract_text_from_excel(self, excel_path):
+    def extract_text_from_excel(self, excel_path):      # ✅ Fungsi untuk mengekstrak teks dari Excel
         import pandas as pd  # Local import
         try:
             df = pd.read_excel(excel_path, sheet_name=None)
@@ -89,7 +85,7 @@ class FileLoaderThread(QThread):
         except Exception as e:
             return f"Excel Error: {e}"
 
-    def extract_text_from_csv(self, csv_path):
+    def extract_text_from_csv(self, csv_path):          # ✅ Fungsi untuk mengekstrak teks dari CSV
         import pandas as pd  # Local import
         try:
             df = pd.read_csv(csv_path)
@@ -97,15 +93,15 @@ class FileLoaderThread(QThread):
         except Exception as e:
             return f"CSV Error: {e}"
 
-class CustomFileLoaderThread(QThread):
+class CustomFileLoaderThread(QThread):                  # ✅ Thread untuk memuat file khusus seperti lexicon dan model
     file_loaded = Signal(object, bool)
 
-    def __init__(self, file_path, file_type):
+    def __init__(self, file_path, file_type):           # ✅ Inisialisasi path file dan jenis file
         super().__init__()
         self.file_path = file_path
         self.file_type = file_type
 
-    def run(self):
+    def run(self):                                      # ✅ Fungsi untuk memuat file
         try:
             if self.file_type == 'lexicon':
                 from vaderSentiment.vaderSentiment import SentimentIntensityAnalyzer
@@ -118,14 +114,14 @@ class CustomFileLoaderThread(QThread):
         except Exception as e:
             self.file_loaded.emit(str(e), False)
 
-class CustomVaderSentimentIntensityAnalyzer:
-    def __init__(self, lexicon_file="vader_lexicon.txt", custom_lexicon_file=None):
+class CustomVaderSentimentIntensityAnalyzer:            # ✅ Kelas untuk menganalisis sentimen dengan lexicon kustom
+    def __init__(self, lexicon_file="vader_lexicon.txt", custom_lexicon_file=None):     # ✅ Inisialisasi lexicon
         from vaderSentiment.vaderSentiment import SentimentIntensityAnalyzer
         self.analyzer = SentimentIntensityAnalyzer()
         if custom_lexicon_file:
             self.load_custom_lexicon(custom_lexicon_file)
 
-    def load_custom_lexicon(self, custom_lexicon_file):
+    def load_custom_lexicon(self, custom_lexicon_file):         # ✅ Fungsi untuk memuat lexicon kustom
         try:
             with open(custom_lexicon_file, 'r', encoding='utf-8') as file:
                 for line in file:
@@ -139,14 +135,14 @@ class CustomVaderSentimentIntensityAnalyzer:
         except Exception:
             pass
 
-    def polarity_scores(self, text):
+    def polarity_scores(self, text):                            # ✅ Fungsi untuk menghitung skor sentimen
         return self.analyzer.polarity_scores(text)
 
-class SentimentAnalysisThread(QThread):
+class SentimentAnalysisThread(QThread):                 # ✅ Thread untuk menganalisis sentimen teks
     sentiment_analyzed = Signal(dict)
     offline_warning = Signal(str)
 
-    def __init__(self, text_data, sentiment_mode, vader_analyzer, flair_classifier, flair_classifier_cuslang):
+    def __init__(self, text_data, sentiment_mode, vader_analyzer, flair_classifier, flair_classifier_cuslang):      # ✅ Inisialisasi data teks dan mode sentimen
         super().__init__()
         self.text_data = text_data
         self.sentiment_mode = sentiment_mode
@@ -154,7 +150,7 @@ class SentimentAnalysisThread(QThread):
         self.flair_classifier = flair_classifier
         self.flair_classifier_cuslang = flair_classifier_cuslang
 
-    async def _async_translate(self, text):
+    async def _async_translate(self, text):             # ✅ Fungsi untuk menerjemahkan teks asinkron
         try:
             from googletrans import Translator
             translator = Translator()
@@ -163,7 +159,7 @@ class SentimentAnalysisThread(QThread):
         except Exception as e:
             return None
 
-    def translate_text(self, text):
+    def translate_text(self, text):                     # ✅ Fungsi untuk menerjemahkan teks
         try:
             loop = asyncio.new_event_loop()
             asyncio.set_event_loop(loop)
@@ -179,7 +175,7 @@ class SentimentAnalysisThread(QThread):
         finally:
             loop.close()
 
-    def analyze_textblob(self, text):
+    def analyze_textblob(self, text):                   # ✅ Fungsi untuk menganalisis sentimen menggunakan TextBlob
         from textblob import TextBlob
         blob = TextBlob(text)
         sentiment = blob.sentiment
@@ -192,7 +188,7 @@ class SentimentAnalysisThread(QThread):
             "subjectivity": sentiment.subjectivity
         }
 
-    def run(self):
+    def run(self):                                      # ✅ Fungsi untuk menjalankan thread
         result = {
             "positive_score": 0,
             "neutral_score": 0,
@@ -284,24 +280,24 @@ class SentimentAnalysisThread(QThread):
             result["sentiment_label"] = f"Error: {str(e)}"
             self.sentiment_analyzed.emit(result)
 
-class FlairModelLoaderThread(QThread):
+class FlairModelLoaderThread(QThread):              # ✅ Thread untuk memuat model Flair
     model_loaded = Signal(object)
     error_occurred = Signal(str)
     
     _cached_model = None  # Class-level cache
 
-    def __init__(self, model_path='sentiment'):
+    def __init__(self, model_path='sentiment'):     # ✅ Inisialisasi path model
         super().__init__()
         self.model_path = model_path
 
-    def run(self):
+    def run(self):                                  # ✅ Fungsi untuk memuat model
         try:
             import time
             from flair.models import TextClassifier
             if FlairModelLoaderThread._cached_model is None:
                 time.sleep(0.1)
                 model = TextClassifier.load(self.model_path)
-                FlairModelLoaderThread._cached_model = model  # Save in cache
+                FlairModelLoaderThread._cached_model = model
             else:
                 model = FlairModelLoaderThread._cached_model
             self.model_loaded.emit(model)
@@ -309,8 +305,8 @@ class FlairModelLoaderThread(QThread):
             self.error_occurred.emit(str(e))
 
 
-class WordCloudGenerator(QMainWindow):
-    def __init__(self):
+class WordCloudGenerator(QMainWindow):              # ✅ Kelas utama untuk GUI
+    def __init__(self):                             # ✅ Inisialisasi variabel
         super().__init__()
         self.file_path = ""
         self.text_data = ""
@@ -321,7 +317,7 @@ class WordCloudGenerator(QMainWindow):
 
         from vaderSentiment.vaderSentiment import SentimentIntensityAnalyzer
         self.vader_analyzer = SentimentIntensityAnalyzer()
-        self.sentiment_mode = "VADER"
+        self.sentiment_mode = "TextBlob"
         self.custom_lexicon_path = None
 
         self.custom_model_path = None
@@ -335,7 +331,7 @@ class WordCloudGenerator(QMainWindow):
         
         self.initUI()
 
-    def initUI(self):
+    def initUI(self):                                   # ✅ Fungsi untuk membuat GUI
         self.setWindowTitle('WCGen')
         self.setFixedSize(550, 750)
         self.setWindowIcon(QIcon('D:/python_proj/wcloudgui/res/gs.ico'))
@@ -343,11 +339,11 @@ class WordCloudGenerator(QMainWindow):
         layout = QGridLayout()
 
         # File selection widgets
-        self.file_label = QLineEdit(self)   # ✅ Label untuk menampilkan nama file  
+        self.file_label = QLineEdit(self)                       # ✅ Label untuk menampilkan nama file  
         self.file_label.setReadOnly(True)
         self.file_label.setFixedHeight(30)
         self.file_label.setPlaceholderText("No file selected")
-        layout.addWidget(self.file_label, 0, 0, 1, 6) # baris (mulai dari 0), kolom di mana ditempatkan (mulai dari 0), berapa baris, berapa kolom
+        layout.addWidget(self.file_label, 0, 0, 1, 6)
 
         self.upload_button = QPushButton('Load Text File', self)   # ✅ Tombol untuk memilih file
         self.upload_button.clicked.connect(self.pilih_file)
@@ -435,24 +431,24 @@ class WordCloudGenerator(QMainWindow):
         self.title_label = QLabel('WordCloud Title:', self) # ✅ Input untuk Judul WordCloud
         layout.addWidget(self.title_label, 9, 0, 1, 2)
 
-        self.title_entry = QLineEdit(self)
+        self.title_entry = QLineEdit(self)          # ✅ Input untuk Judul WordCloud
         self.title_entry.setFixedHeight(30)
         self.title_entry.setPlaceholderText("Enter title (optional)")
         layout.addWidget(self.title_entry, 9, 2, 1, 2)
 
-        self.title_font_size = QSpinBox(self)   # ✅ Input untuk ukuran font judul
+        self.title_font_size = QSpinBox(self)       # ✅ Input untuk ukuran font judul
         self.title_font_size.setRange(8, 72)    
         self.title_font_size.setValue(14)
         self.title_font_size.setFixedHeight(30)
         layout.addWidget(self.title_font_size, 9, 4, 1, 1)
 
-        self.title_position = QComboBox(self)   # ✅ Pilihan posisi judul
+        self.title_position = QComboBox(self)       # ✅ Pilihan posisi judul
         self.title_position.addItems(['Left', 'Center', 'Right'])
         self.title_position.setCurrentText('Center')
         self.title_position.setFixedHeight(30)
         layout.addWidget(self.title_position, 9, 5, 1, 1)        
 
-        self.font_choice_label = QLabel('Font Choice:', self)
+        self.font_choice_label = QLabel('Font Choice:', self)   # ✅ Pilihan font
         layout.addWidget(self.font_choice_label, 10, 0, 1, 2)
 
         self.font_choice = QComboBox(self)  # ✅ Pilihan font
@@ -461,12 +457,6 @@ class WordCloudGenerator(QMainWindow):
         self.font_choice.setToolTip('Select a font family for the word cloud')
         layout.addWidget(self.font_choice, 10, 2, 1, 4)
         QTimer.singleShot(100, self.load_matplotlib_fonts) 
-
-#        self.title_font_weight = QComboBox(self)    # ✅ Pilihan ketebalan font judul dan kata
-#        self.title_font_weight.addItems(['Regular', 'Bold', 'Italic', 'Black'])
-#        self.title_font_weight.setCurrentText('Regular')
-#        self.title_font_weight.setFixedHeight(30)
-#        layout.addWidget(self.title_font_weight, 10, 5, 1, 1)
 
         # --------------------------------------------------------------------------------
 
@@ -499,21 +489,21 @@ class WordCloudGenerator(QMainWindow):
         hline.setFrameShadow(QFrame.Sunken)
         layout.addWidget(hline, 13, 0, 1, 6) 
 
-        self.mask_label = QLabel('Mask Image:', self)
+        self.mask_label = QLabel('Mask Image:', self)       # ✅ Input untuk mask image
         layout.addWidget(self.mask_label, 14, 0, 1, 2)
 
-        self.mask_path_label = QLineEdit('default (rectangle)', self)
+        self.mask_path_label = QLineEdit('default (rectangle)', self)       # ✅ Input untuk mask image
         self.mask_path_label.setReadOnly(True)
         self.mask_path_label.setFixedHeight(30)
         layout.addWidget(self.mask_path_label, 14, 2, 1, 4)
 
-        self.mask_button = QPushButton('Load Mask Image', self)
+        self.mask_button = QPushButton('Load Mask Image', self)     # ✅ Tombol untuk memilih mask image
         self.mask_button.setFixedHeight(30) 
         self.mask_button.setToolTip('Select an image to use as a mask for the word cloud')
         self.mask_button.clicked.connect(self.pilih_mask)
         layout.addWidget(self.mask_button, 15, 2, 1, 2)
 
-        self.reset_mask_button = QPushButton('Remove Mask Image', self)
+        self.reset_mask_button = QPushButton('Remove Mask Image', self)     # ✅ Tombol untuk menghapus mask image
         self.reset_mask_button.setFixedHeight(30)
         self.reset_mask_button.setToolTip('Remove the selected mask image')
         self.reset_mask_button.clicked.connect(self.reset_mask)
@@ -526,14 +516,14 @@ class WordCloudGenerator(QMainWindow):
         hline.setFrameShadow(QFrame.Sunken)
         layout.addWidget(hline, 16, 0, 1, 6) 
 
-        self.buat_wordcloud_button = QPushButton('Generate WordCloud', self)
+        self.buat_wordcloud_button = QPushButton('Generate WordCloud', self)        # ✅ Tombol untuk membuat wordcloud
         self.buat_wordcloud_button.setFixedHeight(50) 
         self.buat_wordcloud_button.setToolTip('Generate the word cloud')
         self.buat_wordcloud_button.clicked.connect(self.buat_wordcloud)
         self.buat_wordcloud_button.setEnabled(False)
         layout.addWidget(self.buat_wordcloud_button, 17, 0, 1, 6)
 
-        self.wordcloud_progress_bar = QProgressBar(self)
+        self.wordcloud_progress_bar = QProgressBar(self)        # ✅ Progress bar untuk menunjukkan proses pembuatan wordcloud
         self.wordcloud_progress_bar.setRange(0, 0) 
         self.wordcloud_progress_bar.setFixedHeight(4)
         self.wordcloud_progress_bar.setStyleSheet("""
@@ -553,14 +543,14 @@ class WordCloudGenerator(QMainWindow):
         self.wordcloud_progress_bar.setVisible(False)
         layout.addWidget(self.wordcloud_progress_bar, 18, 0, 1, 6)
 
-        self.statistik_button = QPushButton('Word Count', self)
+        self.statistik_button = QPushButton('Word Count', self)         # ✅ Tombol untuk menampilkan statistik kata
         self.statistik_button.setFixedHeight(30)
         self.statistik_button.setToolTip('Show word frequency statistics')
         self.statistik_button.clicked.connect(self.tampilkan_statistik)
         self.statistik_button.setEnabled(False)
         layout.addWidget(self.statistik_button, 19, 0, 1, 3)
 
-        self.simpan_button = QPushButton('Save WordCloud', self)
+        self.simpan_button = QPushButton('Save WordCloud', self)        # ✅ Tombol untuk menyimpan wordcloud
         self.simpan_button.setFixedHeight(30) 
         self.simpan_button.setToolTip('Save the generated word cloud')
         self.simpan_button.clicked.connect(self.simpan_wordcloud)
@@ -574,37 +564,38 @@ class WordCloudGenerator(QMainWindow):
         hline.setFrameShadow(QFrame.Sunken)
         layout.addWidget(hline, 20, 0, 1, 6) 
 
-        self.sentiment_mode_label = QLabel('Sentiment Analysis Mode:', self)
+        self.sentiment_mode_label = QLabel('Sentiment Analysis Mode:', self)        # ✅ Pilihan mode analisis sentimen
         layout.addWidget(self.sentiment_mode_label, 21, 0, 1, 2)
 
-        self.sentiment_mode_combo = QComboBox(self)
+        self.sentiment_mode_combo = QComboBox(self)             # ✅ Pilihan mode analisis sentimen
         self.sentiment_mode_combo.setFixedHeight(30)
         self.sentiment_mode_combo.addItems(["TextBlob", "TextBlob (Non-English)", "VADER", "VADER (Custom Lexicon)", "Flair", "Flair (Custom Model)"])
         self.sentiment_mode_combo.setToolTip('Select sentiment analysis mode')
+        self.sentiment_mode_combo.setCurrentText("TextBlob")
         self.sentiment_mode_combo.currentTextChanged.connect(self.change_sentiment_mode)
         layout.addWidget(self.sentiment_mode_combo, 21, 2, 1, 3)        
 
-        self.sentiment_mode_info_button = QPushButton('Info', self)
+        self.sentiment_mode_info_button = QPushButton('Info', self)         # ✅ Tombol untuk menampilkan informasi mode analisis sentimen
         self.sentiment_mode_info_button.setFixedHeight(30)
         self.sentiment_mode_info_button.setToolTip('Show description for each sentiment analysis mode')
         self.sentiment_mode_info_button.clicked.connect(self.show_sentiment_mode_info)
         layout.addWidget(self.sentiment_mode_info_button, 21, 5, 1, 1)
 
-        self.custom_lexicon_button = QPushButton('Load Lexicon', self)
+        self.custom_lexicon_button = QPushButton('Load Lexicon', self)          # ✅ Tombol untuk memuat lexicon kustom
         self.custom_lexicon_button.setFixedHeight(30)
         self.custom_lexicon_button.setToolTip('Load a custom lexicon file for VADER')
         self.custom_lexicon_button.clicked.connect(self.load_custom_lexicon)
         self.custom_lexicon_button.setEnabled(False)
         layout.addWidget(self.custom_lexicon_button, 22, 2, 1, 2)
 
-        self.custom_model_button = QPushButton('Load Model', self)
+        self.custom_model_button = QPushButton('Load Model', self)          # ✅ Tombol untuk memuat model kustom
         self.custom_model_button.setFixedHeight(30)
         self.custom_model_button.setToolTip('Load a custom model file for Flair')
         self.custom_model_button.clicked.connect(self.load_custom_model)
         self.custom_model_button.setEnabled(False)
         layout.addWidget(self.custom_model_button, 22, 4, 1, 2)        
 
-        self.model_progress_bar = QProgressBar(self)
+        self.model_progress_bar = QProgressBar(self)            # ✅ Progress bar untuk menunjukkan proses memuat model
         self.model_progress_bar.setRange(0, 0) 
         self.model_progress_bar.setFixedHeight(4)
         self.model_progress_bar.setStyleSheet("""
@@ -624,7 +615,7 @@ class WordCloudGenerator(QMainWindow):
         self.model_progress_bar.setVisible(False)
         layout.addWidget(self.model_progress_bar, 23, 2, 1, 4)
 
-        self.sentiment_button = QPushButton('Analyze Sentiment', self)
+        self.sentiment_button = QPushButton('Analyze Sentiment', self)          # ✅ Tombol untuk menganalisis sentimen
         self.sentiment_button.setFixedHeight(50)
         self.sentiment_button.setToolTip('Analyze the sentiment of the text')
         self.sentiment_button.clicked.connect(self.analyze_sentiment)
@@ -638,19 +629,19 @@ class WordCloudGenerator(QMainWindow):
         hline.setFrameShadow(QFrame.Sunken)
         layout.addWidget(hline, 25, 0, 1, 6) 
 
-        self.about_button = QPushButton('About', self)
+        self.about_button = QPushButton('About', self)          # ✅ Tombol untuk menampilkan informasi aplikasi
         self.about_button.setFixedHeight(30)
         self.about_button.setToolTip('Show information about the application')
         self.about_button.clicked.connect(self.show_about)
         layout.addWidget(self.about_button, 26, 0, 1, 2)
 
-        self.panic_button = QPushButton('STOP', self)
+        self.panic_button = QPushButton('STOP', self)               # ✅ Tombol untuk menghentikan semua proses
         self.panic_button.setFixedHeight(30)
         self.panic_button.setToolTip('Stop all ongoing processes')
         self.panic_button.clicked.connect(self.stop_all_processes)
         layout.addWidget(self.panic_button, 26, 2, 1, 2) 
 
-        self.quit_button = QPushButton('Quit', self)
+        self.quit_button = QPushButton('Quit', self)            # ✅ Tombol untuk keluar dari aplikasi
         self.quit_button.setFixedHeight(30) 
         self.quit_button.setToolTip('Quit WCGen :(')
         self.quit_button.clicked.connect(self.close)
@@ -661,14 +652,12 @@ class WordCloudGenerator(QMainWindow):
         self.setCentralWidget(container)
 
     # Add new method to load fonts
-    def load_matplotlib_fonts(self):
-        """Load available font variations with proper style/weight detection"""
+    def load_matplotlib_fonts(self):        # ✅ Fungsi untuk memuat font matplotlib
         try:
             from matplotlib import font_manager
             
             self.font_map = {}  # Format: {"Display Name": "font_path"}
             
-            # Daftar weight yang akan di-convert ke nama
             weight_conversion = {
                 100: 'Thin',
                 200: 'Extra Light',
@@ -739,7 +728,7 @@ class WordCloudGenerator(QMainWindow):
             QMessageBox.critical(self, "Error", "No text data available for sentiment analysis./nPlease load a text file first.")
             return
         
-        # Validate model requirements
+        # Validasi mode sentimen
         if self.sentiment_mode == "Flair" and not self.flair_classifier:
             QMessageBox.warning(self, "Model Loading", 
                             "Default Flair model is still loading. Please wait...")
@@ -750,7 +739,8 @@ class WordCloudGenerator(QMainWindow):
                 QMessageBox.warning(self, "Model Required", 
                                 "Please load a custom Flair model first!")
                 return
-            # Use custom model for analysis
+        
+        # Use custom model for analysis
         classifier = self.flair_classifier_cuslang if self.sentiment_mode == "Flair (Custom Model)" else self.flair_classifier
 
         # Proceed with analysis
@@ -948,8 +938,6 @@ class WordCloudGenerator(QMainWindow):
                 font_path = None
                 return  # Hentikan proses jika font tidak valid
 
-
-
         if not self.text_data:
             QMessageBox.critical(self, "Error", "Load text file first!")
             return
@@ -1001,10 +989,8 @@ class WordCloudGenerator(QMainWindow):
             plt.imshow(wc, interpolation="bilinear")
 
             # ✅ Tambahkan Judul jika Ada
-            # Create plot title with matching font
             title_text = self.title_entry.text().strip()
-            # Di dalam method buat_wordcloud():
-            # Di dalam method buat_wordcloud():
+
             if title_text:
                 # Ambil path font yang dipilih
                 selected_font_name = self.font_choice.currentText()
@@ -1023,10 +1009,8 @@ class WordCloudGenerator(QMainWindow):
                 plt.title(
                     title_text,
                     loc=self.title_position.currentText().lower(),
-                    fontproperties=title_font  # Gunakan fontproperties, bukan fontfamily
+                    fontproperties=title_font
                 )
-
-
 
             plt.axis("off")  # Selalu hilangkan border
             plt.show()
@@ -1036,8 +1020,7 @@ class WordCloudGenerator(QMainWindow):
             self.wordcloud_progress_bar.setVisible(False)
             QMessageBox.critical(self, "Error", f"Failed to generate word cloud: {e}")
 
-
-    def simpan_wordcloud(self):
+    def simpan_wordcloud(self):             # ✅ Fungsi untuk menyimpan wordcloud
         options = QFileDialog.Options()
         save_path, _ = QFileDialog.getSaveFileName(self, "Save WordCloud", "", "PNG file (*.png);;JPG file (*.jpg)", options=options)
         if not save_path:
@@ -1081,7 +1064,8 @@ class WordCloudGenerator(QMainWindow):
         except Exception as e:
             QMessageBox.critical(self, "Error", f"Failed to save word cloud: {e}")
 
-    def create_custom_palette(self):
+    # ✅ Fungsi untuk membuat palet warna kustom
+    def create_custom_palette(self):                    
         dialog = QDialog(self)
         dialog.setWindowTitle("Create Custom Palette")
         dialog.setFixedSize(400, 150)
@@ -1109,20 +1093,23 @@ class WordCloudGenerator(QMainWindow):
         dialog.setLayout(layout)
         dialog.exec()
 
-    def save_custom_palette(self, color_list, dialog):
+    # ✅ Fungsi untuk menyimpan palet warna kustom
+    def save_custom_palette(self, color_list, dialog):              
         palette_name, ok = QInputDialog.getText(self, "Save Palette", "Enter palette name:")
         if ok and palette_name:
             self.custom_color_palettes[palette_name] = color_list
             self.color_theme.addItem(palette_name)
             dialog.accept()
 
-    def select_custom_bg_color(self):
+    # ✅ Fungsi untuk memilih warna latar belakang kustom
+    def select_custom_bg_color(self):           
         color = QColorDialog.getColor()
         if color.isValid():
             self.bg_color.addItem(color.name())
             self.bg_color.setCurrentText(color.name())
 
-    def view_full_text(self):
+    # ✅ Fungsi untuk melihat teks penuh
+    def view_full_text(self):           
         if not self.text_data:
             QMessageBox.critical(self, "Error", "No text data available to display.")
             return
@@ -1147,9 +1134,8 @@ class WordCloudGenerator(QMainWindow):
         self.text_dialog.setLayout(layout)
         self.text_dialog.show()
 
-
-    def handle_offline_warning(self, msg):
-        """Stop progress bar and show offline warning message."""
+    # ✅ Stop progressbar dan buka jendela warning
+    def handle_offline_warning(self, msg):      
         self.progress_bar.setVisible(False) 
         QMessageBox.warning(self, "Offline Mode", msg) 
 
@@ -1256,9 +1242,6 @@ class WordCloudGenerator(QMainWindow):
         self.flair_loader_thread.error_occurred.connect(self.on_flair_model_error)
         self.flair_loader_thread.finished.connect(self.cleanup_flair_thread)
         self.flair_loader_thread.start()
-
-
-
 
     def on_flair_model_loaded(self, model):
         if model:
@@ -1379,8 +1362,6 @@ class WordCloudGenerator(QMainWindow):
         """Ensure the Flair model thread is properly cleaned up without premature deletion."""
         QTimer.singleShot(100, lambda: setattr(self, 'flair_loader_thread', None))  # ✅ Delayed cleanup to avoid conflicts
 
-
-
     def show_sentiment_mode_info(self):
         description = (
             "TextBlob: Suitable for formal text and classic NLP analysis, such as articles, reports, and long documents.\n\n"
@@ -1405,9 +1386,6 @@ class WordCloudGenerator(QMainWindow):
 
         dialog.setLayout(layout)
         dialog.show()
-
-
-
 
 def is_connected():
     try:

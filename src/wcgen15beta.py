@@ -973,6 +973,7 @@ class WordCloudGenerator(QMainWindow):
         )
 
         dialog = QDialog(self)
+        dialog.setWindowModality(Qt.NonModal)
         dialog.setWindowTitle("About WCGen")
         dialog.setMinimumSize(500, 400)
         dialog.setSizeGripEnabled(True)
@@ -990,7 +991,7 @@ class WordCloudGenerator(QMainWindow):
         layout.addWidget(close_button)
 
         dialog.setLayout(layout)
-        dialog.exec()
+        dialog.show()
 
     def pilih_file(self):
         options = QFileDialog.Options()
@@ -1097,6 +1098,7 @@ class WordCloudGenerator(QMainWindow):
             self.stats_dialog.close()
 
         self.stats_dialog = QDialog(self)
+        self.stats_dialog.setWindowModality(Qt.NonModal)
         self.stats_dialog.setWindowTitle("Word Frequency Statistics")
         self.stats_dialog.setMinimumSize(500, 400)
 
@@ -1124,7 +1126,7 @@ class WordCloudGenerator(QMainWindow):
         layout.addWidget(close_button)
 
         self.stats_dialog.setLayout(layout)
-        self.stats_dialog.exec()
+        self.stats_dialog.show()
 
     def buat_wordcloud(self):
         import matplotlib.pyplot as plt
@@ -1191,7 +1193,7 @@ class WordCloudGenerator(QMainWindow):
                 )
 
             plt.axis("off")
-            plt.show()
+            plt.show(block=False)
         except Exception as e:
             if self.current_figure:
                 plt.close(self.current_figure)
@@ -1308,6 +1310,7 @@ class WordCloudGenerator(QMainWindow):
             self.text_dialog.close()
 
         self.text_dialog = QDialog(self)
+        self.text_dialog.setWindowModality(Qt.NonModal)
         self.text_dialog.setWindowTitle("Full Text")
         self.text_dialog.setMinimumSize(600, 400)
         self.text_dialog.setSizeGripEnabled(True)
@@ -1326,7 +1329,7 @@ class WordCloudGenerator(QMainWindow):
         layout.addWidget(close_button)
 
         self.text_dialog.setLayout(layout)
-        self.text_dialog.exec()
+        self.text_dialog.show()
 
     def handle_offline_warning(self, msg):
         self.progress_bar.setVisible(False)
@@ -1341,6 +1344,7 @@ class WordCloudGenerator(QMainWindow):
         most_frequent_words = self.get_most_frequent_words(self.text_data, 5)
 
         self.show_sentiment_analysis(
+            self.sentiment_mode,
             result["positive_score"],
             result["neutral_score"],
             result["negative_score"],
@@ -1356,6 +1360,7 @@ class WordCloudGenerator(QMainWindow):
 
     def show_sentiment_analysis(
         self,
+        analysis_mode,
         positive_score,
         neutral_score,
         negative_score,
@@ -1369,6 +1374,7 @@ class WordCloudGenerator(QMainWindow):
         most_frequent_words,
     ):
         dialog = QDialog(self)
+        dialog.setWindowModality(Qt.NonModal)
         dialog.setWindowTitle("Sentiment Analysis")
         dialog.setMinimumSize(500, 400)
         dialog.setSizeGripEnabled(True)
@@ -1381,6 +1387,7 @@ class WordCloudGenerator(QMainWindow):
         <h2>Sentiment Analysis Results</h2>
         <table border="1" cellspacing="0" cellpadding="5" width="100%">
             <tr><th align="left">Metric</th><th align="left">Value</th></tr>
+            <tr><td>Analysis Mode</td><td>{analysis_mode}</td></tr>
             <tr><td>Sentiment Label</td><td>{sentiment_label}</td></tr>
             <tr><td>Positive Sentiment</td><td>{positive_score:.2f}</td></tr>
             <tr><td>Neutral Sentiment</td><td>{neutral_score:.2f}</td></tr>
@@ -1406,7 +1413,7 @@ class WordCloudGenerator(QMainWindow):
         layout.addWidget(close_button)
 
         dialog.setLayout(layout)
-        dialog.exec()
+        dialog.show()
 
     def get_most_frequent_words(self, text, n):
         stopwords = self.ambil_stopwords().union(STOPWORDS)
@@ -1645,6 +1652,7 @@ class WordCloudGenerator(QMainWindow):
 
     def show_sentiment_mode_info(self):
         dialog = QDialog(self)
+        dialog.setWindowModality(Qt.NonModal)
         dialog.setWindowTitle("Sentiment Analysis Modes")
         dialog.setMinimumSize(500, 400)
         dialog.setSizeGripEnabled(True)
@@ -1673,6 +1681,12 @@ class WordCloudGenerator(QMainWindow):
             "<p>Flair utilizes deep learning techniques for sentiment analysis, making it highly accurate for complex texts. "
             "It is ideal for analyzing large-scale textual data, capturing context more effectively than traditional rule-based models. "
             "However, it requires more computational resources compared to TextBlob and VADER.</p>"
+
+            "<h3>Important Note for Language Support</h3>"
+            "<p>While this application supports non-English text through automatic translation, it is <b>highly recommended</b> to use <b>manually translated and "
+            "refined English text</b> for the most accurate sentiment analysis. The built-in automatic translation feature may not always function correctly, "
+            "leading to potential misinterpretations or inaccurate sentiment results.</p>"
+            "<p>For the best performance, ensure that non-English text is properly reviewed and adjusted before sentiment analysis. 🚀</p>"
         )
 
         text_browser.setHtml(mode_info)
@@ -1686,7 +1700,7 @@ class WordCloudGenerator(QMainWindow):
         layout.addWidget(close_button)
 
         dialog.setLayout(layout)
-        dialog.exec()
+        dialog.show()
 
 def is_connected():
     try:

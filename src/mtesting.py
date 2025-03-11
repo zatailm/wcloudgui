@@ -467,7 +467,7 @@ class SentimentAnalysisThread(QThread):
                 )
 
             self.sentiment_analyzed.emit(result)
-            
+
         except Exception as e:
             result["sentiment_label"] = f"Error: {str(e)}"
             self.sentiment_analyzed.emit(result)
@@ -1004,8 +1004,6 @@ class WordCloudGenerator(QMainWindow):
     def closeEvent(self, event):
         import matplotlib.pyplot as plt
 
-        plt.close("all")
-
         reply = QMessageBox.question(
             self,
             ":(",
@@ -1013,7 +1011,12 @@ class WordCloudGenerator(QMainWindow):
             QMessageBox.Yes | QMessageBox.No,
             QMessageBox.No,
         )
+
         if reply == QMessageBox.Yes:
+            if self.current_figure:
+                plt.close(self.current_figure)
+                self.current_figure = None
+
             self.threads_mutex.lock()
             threads = self.active_threads.copy()
             self.threads_mutex.unlock()
@@ -1030,12 +1033,13 @@ class WordCloudGenerator(QMainWindow):
 
             self.progress_bar.setVisible(False)
             self.model_progress_bar.setVisible(False)
-            self.model_progress_bar.setVisible(False)
+            self.wordcloud_progress_bar.setVisible(False)
             self.active_threads.clear()
 
             for widget in QApplication.topLevelWidgets():
                 if widget is not self:
                     widget.close()
+
             event.accept()
         else:
             event.ignore()

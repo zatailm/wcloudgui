@@ -198,6 +198,8 @@ class CustomVaderSentimentIntensityAnalyzer:
 class CustomTextBlobSentimentAnalyzer:
     def __init__(self, lexicon_file=None):
         self.lexicon = {}
+        self.negations = {"not", "no", "never", "none"}  # Default negations (expandable)
+        self.intensifiers = {"very": 1.3, "extremely": 1.5}  # Default intensifiers (word: multiplier)
         if lexicon_file and os.path.exists(lexicon_file):
             self.load_custom_lexicon(lexicon_file)
 
@@ -206,12 +208,22 @@ class CustomTextBlobSentimentAnalyzer:
             with open(custom_lexicon_file, "r", encoding="utf-8") as file:
                 for line in file:
                     parts = line.strip().split("\t")
-                    if len(parts) == 2:
-                        word, measure = parts
-                        try:
-                            self.lexicon[word.lower()] = float(measure)
-                        except ValueError:
-                            pass
+                    if len(parts) >= 2:
+                        word, measure = parts[0], parts[1]
+                        # Handle special markers for negations/intensifiers
+                        if measure.lower() == "negation":
+                            self.negations.add(word.lower())
+                        elif measure.startswith("intensifier:"):
+                            try:
+                                multiplier = float(measure.split(":")[1])
+                                self.intensifiers[word.lower()] = multiplier
+                            except ValueError:
+                                pass
+                        else:
+                            try:
+                                self.lexicon[word.lower()] = float(measure)
+                            except ValueError:
+                                pass
         except Exception as e:
             print(f"Failed to load TextBlob custom lexicon: {e}")
 
@@ -219,11 +231,39 @@ class CustomTextBlobSentimentAnalyzer:
         from textblob import TextBlob
         
         blob = TextBlob(text)
-        custom_polarity = sum(self.lexicon.get(word.lower(), 0.0) for word in blob.words) / max(1, len(blob.words))
-        
+        total_polarity = 0.0
+        words_with_context = []
+
+        # Preprocess with context markers
+        for sentence in blob.sentences:
+            words = sentence.words
+            for i, word in enumerate(words):
+                word_lower = word.lower()
+                current_score = self.lexicon.get(word_lower, 0.0)
+                
+                # Check for negations (previous word)
+                if i > 0 and words[i-1].lower() in self.negations:
+                    current_score *= -1
+                
+                # Check for intensifiers (previous word)
+                if i > 0 and words[i-1].lower() in self.intensifiers:
+                    multiplier = self.intensifiers[words[i-1].lower()]
+                    current_score *= multiplier
+                
+                words_with_context.append(current_score)
+
+        # Calculate adjusted polarity
+        valid_scores = [s for s in words_with_context if s != 0]
+        if valid_scores:
+            avg_polarity = sum(valid_scores) / len(valid_scores)
+        else:
+            avg_polarity = 0.0
+
+        # Use native TextBlob subjectivity
         return {
-            'polarity': custom_polarity,
-            'subjectivity': blob.sentiment.subjectivity
+            'polarity': avg_polarity,
+            'subjectivity': blob.sentiment.subjectivity,
+            'processed_words': len(valid_scores)
         }
 
 class SentimentAnalysisThread(QThread):
@@ -1766,11 +1806,21 @@ class WordCloudGenerator(QMainWindow):
             "It is ideal for analyzing large-scale textual data, capturing context more effectively than traditional rule-based models. "
             "However, it requires more computational resources compared to TextBlob and VADER.</p>"
 
-            "<h3>Important Note for Language Support</h3>"
+            "<h3>🌐 Important Note for Language Support</h3>"
             "<p>While this application supports non-English text through automatic translation, it is <b>highly recommended</b> to use <b>manually translated and "
             "refined English text</b> for the most accurate sentiment analysis. The built-in automatic translation feature may not always function correctly, "
             "leading to potential misinterpretations or inaccurate sentiment results.</p>"
             "<p>For the best performance, ensure that non-English text is properly reviewed and adjusted before sentiment analysis. 🚀</p>"
+
+            "<h3>📌 Custom Lexicon Format Example</h3>"
+            "<p>Below is an example of a custom lexicon format for sentiment analysis:</p>"
+            "<pre style='background-color:#f4f4f4; padding:10px; border-radius:5px;'>"
+            "excellent   1.5\n"
+            "awful      -1.5\n"
+            "not        negation         # Mark as negation word\n"
+            "intensely  intensifier:1.7  # Custom intensifier with multiplier"
+            "</pre>"
+            "<p>This custom lexicon allows fine-tuning of sentiment scores by adding custom words, negations, and intensifiers to improve sentiment analysis accuracy.</p>"
         )
 
         text_browser.setHtml(mode_info)

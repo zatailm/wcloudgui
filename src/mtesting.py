@@ -335,10 +335,18 @@ class SentimentAnalysisThread(QThread):
             polarity = blob.sentiment.polarity
             subjectivity = blob.sentiment.subjectivity
 
+        if abs(polarity) < 0.1:
+            neutral_score = 1.0
+            positive_score = negative_score = 0.0
+        else:
+            positive_score = (polarity + 1) / 2 if polarity > 0 else 0
+            negative_score = (-polarity + 1) / 2 if polarity < 0 else 0
+            neutral_score = 1 - (positive_score + negative_score)
+
         return {
-            "positive_score": max(polarity, 0),
-            "negative_score": max(-polarity, 0),
-            "neutral_score": 1 - abs(polarity),
+            "positive_score": positive_score,
+            "negative_score": negative_score,
+            "neutral_score": neutral_score,
             "compound_score": polarity,
             "sentiment_label": "POSITIVE" if polarity > 0 else "NEGATIVE" if polarity < 0 else "NEUTRAL",
             "subjectivity": subjectivity
@@ -386,11 +394,18 @@ class SentimentAnalysisThread(QThread):
             elif self.sentiment_mode == "VADER":
                 if self.vader_analyzer:
                     sentiment = self.vader_analyzer.polarity_scores(text_to_analyze)
+                    total = sentiment["pos"] + sentiment["neg"] + sentiment["neu"]
+
+                    # Normalisasi agar total selalu 1.0
+                    positive_score = sentiment["pos"] / total if total > 0 else 0
+                    negative_score = sentiment["neg"] / total if total > 0 else 0
+                    neutral_score = sentiment["neu"] / total if total > 0 else 0
+
                     result.update(
                         {
-                            "positive_score": sentiment["pos"],
-                            "negative_score": sentiment["neg"],
-                            "neutral_score": sentiment["neu"],
+                            "positive_score": positive_score,
+                            "negative_score": negative_score,
+                            "neutral_score": neutral_score,
                             "compound_score": sentiment["compound"],
                             "sentiment_label": "POSITIVE"
                             if sentiment["compound"] >= 0.05
@@ -427,41 +442,32 @@ class SentimentAnalysisThread(QThread):
                 sentence = Sentence(text_to_analyze)
                 self.flair_classifier.predict(sentence)
                 sentiment = sentence.labels[0]
+
+                confidence = sentiment.score  # Confidence score dari Flair
+                sentiment_label = sentiment.value  # Bisa "POSITIVE" atau "NEGATIVE"
+
+                # Gunakan threshold confidence untuk netral
+                if confidence < 0.55:
+                    sentiment_label = "NEUTRAL"
+                    positive_score = negative_score = 0.0
+                    neutral_score = 1.0
+                else:
+                    positive_score = confidence if sentiment_label == "POSITIVE" else 0
+                    negative_score = confidence if sentiment_label == "NEGATIVE" else 0
+                    neutral_score = 0  # Karena Flair tidak memiliki konsep "neutral"
+
                 result.update(
                     {
-                        "compound_score": sentiment.score,
-                        "sentiment_label": sentiment.value,
-                        "positive_score": sentiment.score
-                        if sentiment.value == "POSITIVE"
-                        else 0,
-                        "negative_score": sentiment.score
-                        if sentiment.value == "NEGATIVE"
-                        else 0,
-                        "neutral_score": 1 - sentiment.score,
-                    }
-                )
-
-            elif self.sentiment_mode == "Flair (Custom Model)":
-                from flair.data import Sentence
-
-                sentence = Sentence(self.text_data)
-                self.flair_classifier_cuslang.predict(sentence)
-                sentiment = sentence.labels[0]
-                result.update(
-                    {
-                        "compound_score": sentiment.score,
-                        "sentiment_label": sentiment.value,
-                        "positive_score": sentiment.score
-                        if sentiment.value == "POSITIVE"
-                        else 0,
-                        "negative_score": sentiment.score
-                        if sentiment.value == "NEGATIVE"
-                        else 0,
-                        "neutral_score": 1 - sentiment.score,
+                        "compound_score": confidence,
+                        "sentiment_label": sentiment_label,
+                        "positive_score": positive_score,
+                        "negative_score": negative_score,
+                        "neutral_score": neutral_score,
                     }
                 )
 
             self.sentiment_analyzed.emit(result)
+            
         except Exception as e:
             result["sentiment_label"] = f"Error: {str(e)}"
             self.sentiment_analyzed.emit(result)
@@ -781,7 +787,7 @@ class WordCloudGenerator(QMainWindow):
 
         self.custom_lexicon_button = QPushButton("Load Lexicon", self)
         self.custom_lexicon_button.setFixedHeight(30)
-        self.custom_lexicon_button.setToolTip("Load a custom lexicon file for VADER")
+        self.custom_lexicon_button.setToolTip("Load a custom lexicon file for TextBlob or VADER")
         self.custom_lexicon_button.clicked.connect(self.load_custom_lexicon)
         self.custom_lexicon_button.setEnabled(False)
         layout.addWidget(self.custom_lexicon_button, 22, 2, 1, 2)
@@ -932,13 +938,12 @@ class WordCloudGenerator(QMainWindow):
         if self.sentiment_mode in ["Flair", "TextBlob"]:
             try:
                 from langdetect import detect
-                detected_lang = detect(self.text_data)
-                if detected_lang == "en":
-                    self.sentiment_mode = "Flair"
             except:
                 pass  # If detection fails, continue with the selected mode
 
-        if self.sentiment_mode == "Flair" and not self.flair_classifier:
+        if (self.sentiment_mode == "Flair" and 
+            not self.flair_classifier and 
+            self.sentiment_mode_combo.currentText() == "Flair"):
             QMessageBox.warning(
                 self,
                 "Model Loading",

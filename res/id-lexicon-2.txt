@@ -3,7 +3,7 @@ luar biasa	4.0
 hebat	3.5
 mantap	3.0
 menyenangkan	2.5
-sangat baik	3.5
+sangat baik	4.0
 memuaskan	3.0
 terbaik	4.0
 indah	3.0
@@ -89,7 +89,6 @@ sangat memuaskan	4.0
 pemandangan indah	3.5
 tempat strategis	3.0
 harga sesuai	3.0
-
 biasa	0.0
 standar	0.0
 cukup	0.0
@@ -112,7 +111,6 @@ gitu doang	0.0
 standar aja	0.0
 standar banget	0.0
 bukan yang terbaik	-0.5
-
 buruk	-3.0
 sangat buruk	-4.0
 jelek	-3.5
@@ -193,135 +191,6 @@ gak sesuai	-3.0
 tidak nyaman sama sekali	-4.0
 gak nyaman	-4.0
 sangat mengecewakan	-4.0
-berkualitas tinggi	4.0
-sangat berkualitas	4.0
-awet	3.5
-tahan lama	3.5
-kokoh	3.5
-premium	4.0
-kelas atas	3.5
-mewah	4.0
-unggul	4.0
-worth it	3.5
-layak dibeli	3.5
-sesuai ekspektasi	3.0
-sesuai deskripsi	3.0
-lebih dari ekspektasi	4.0
-recommended	4.0
-biasa aja	0.0
-standar	0.0
-kurang berkualitas	-2.5
-mudah rusak	-3.0
-tidak sesuai deskripsi	-3.5
-murahan	-3.5
-palsu	-4.0
-mengecewakan	-3.5
-tidak worth it	-3.5
-sangat buruk	-4.0
-ramah	3.5
-pelayanan prima	4.0
-profesional	3.5
-sigap	3.5
-cepat tanggap	3.5
-sopan	3.0
-membantu	3.5
-berempati	3.5
-sabar	3.0
-super ramah	4.0
-layanan terbaik	4.0
-terlalu lama	-3.0
-lambat	-3.0
-tidak ramah	-3.5
-cuek	-3.5
-kasar	-3.5
-tidak profesional	-3.5
-pelayanan buruk	-4.0
-menyebalkan	-3.5
-sangat tidak sopan	-4.0
-nyaman	3.5
-super nyaman	4.0
-cozy	3.5
-homy	3.5
-bersih	3.5
-sejuk	3.5
-asri	3.5
-terawat	3.5
-suasana tenang	3.5
-ruangan luas	3.5
-tempat strategis	3.0
-bising	-3.0
-berisik	-3.0
-kotor	-3.5
-tidak higienis	-3.5
-bau	-3.5
-sumpek	-3.0
-sempit	-3.0
-tidak nyaman	-3.5
-panas	-3.0
-pengap	-3.0
-harga pas	3.0
-terjangkau	3.0
-harga sesuai kualitas	3.5
-murah tapi berkualitas	3.5
-worth it	3.5
-budget-friendly	3.0
-mahal	-3.0
-terlalu mahal	-3.5
-overpriced	-3.5
-tidak sebanding dengan harga	-3.5
-harga tidak sesuai	-3.5
-kemahalan	-3.5
-menyenangkan	3.5
-memuaskan	3.5
-luar biasa	4.0
-fantastis	4.0
-sangat baik	3.5
-menakjubkan	4.0
-senang sekali	4.0
-menghibur	3.5
-betah	3.5
-biasa aja	0.0
-kurang menarik	-2.5
-tidak mengesankan	-3.0
-sangat mengecewakan	-4.0
-bosan	-3.0
-tidak nyaman sama sekali	-4.0
-trauma	-4.0
-enak	3.5
-lezat	3.5
-gurih	3.5
-nikmat	3.5
-fresh	3.5
-authentic	3.5
-porsinya pas	3.0
-terlalu manis	-2.5
-terlalu asin	-2.5
-terlalu pedas	-2.5
-hambar	-3.0
-basi	-3.5
-tidak enak	-3.5
-cepat	3.5
-tepat waktu	3.5
-sampai dengan baik	3.5
-aman	3.5
-pengiriman cepat	3.5
-terlambat	-3.0
-sangat lama	-3.5
-tidak tepat waktu	-3.5
-barang rusak saat sampai	-3.5
-rusak	-3.5
-user-friendly	3.5
-mudah digunakan	3.5
-ringan	3.5
-fitur lengkap	3.5
-tampilan menarik	3.5
-sering error	-3.5
-bug banyak	-3.5
-susah digunakan	-3.5
-terlalu rumit	-3.0
-loading lama	-3.0
-amanah	4.0
-tidak amanah	-3.5
 tidak	-1.0
 bukan	-1.0
 jangan	-1.0

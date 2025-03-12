@@ -40,22 +40,43 @@ class FileLoaderThread(QThread):
 
     def run(self):
         try:
+            # Pemeriksaan interupsi awal
+            if self.isInterruptionRequested():
+                return
+
             if not os.path.exists(self.file_path):
                 raise FileNotFoundError(f"File not found: {self.file_path}")
 
+            text_data = ""
+            
             if self.file_path.endswith(".txt"):
                 with open(self.file_path, "r", encoding="utf-8") as file:
-                    text_data = file.read()
+                    while True:
+                        if self.isInterruptionRequested():
+                            return
+                        line = file.readline()
+                        if not line:
+                            break
+                        text_data += line
+
             elif self.file_path.endswith(".pdf"):
                 text_data = self.extract_text_from_pdf(self.file_path)
+                
             elif self.file_path.endswith((".doc", ".docx")):
                 text_data = self.extract_text_from_word(self.file_path)
+                
             elif self.file_path.endswith((".xlsx", ".xls")):
                 text_data = self.extract_text_from_excel(self.file_path)
+                
             elif self.file_path.endswith(".csv"):
                 text_data = self.extract_text_from_csv(self.file_path)
+                
             else:
                 raise ValueError(f"Unsupported file format: {os.path.splitext(self.file_path)[1]}")
+
+            # Pemeriksaan interupsi akhir sebelum emit
+            if self.isInterruptionRequested():
+                return
 
             if not text_data.strip():
                 raise ValueError("File is empty or contains no extractable text")
@@ -74,7 +95,10 @@ class FileLoaderThread(QThread):
                 reader = pypdf.PdfReader(file)
                 if not reader.pages:
                     raise ValueError("PDF contains no readable pages")
+                
                 for page in reader.pages:
+                    if self.isInterruptionRequested():
+                        return ""
                     page_text = page.extract_text()
                     if page_text:
                         text += page_text + "\n"
@@ -88,18 +112,28 @@ class FileLoaderThread(QThread):
             doc = docx.Document(word_path)
             if not doc.paragraphs:
                 raise ValueError("Word document contains no readable text")
-            return "\n".join([para.text for para in doc.paragraphs if para.text.strip()])
+            
+            text = ""
+            for para in doc.paragraphs:
+                if self.isInterruptionRequested():
+                    return ""
+                if para.text.strip():
+                    text += para.text + "\n"
+            return text
         except Exception as e:
             raise RuntimeError(f"Word processing failed: {str(e)}") from e
 
     def extract_text_from_excel(self, excel_path):
         try:
             import pandas as pd
+            text_data = ""
             df = pd.read_excel(excel_path, sheet_name=None)
             if not df:
                 raise ValueError("Excel file is empty or unreadable")
-            text_data = ""
+            
             for sheet_name, sheet_df in df.items():
+                if self.isInterruptionRequested():
+                    return ""
                 text_data += f"\n--- {sheet_name} ---\n"
                 text_data += sheet_df.to_string(index=False, header=True)
             return text_data
@@ -112,6 +146,11 @@ class FileLoaderThread(QThread):
             df = pd.read_csv(csv_path)
             if df.empty:
                 raise ValueError("CSV file is empty")
+            
+            # Pemeriksaan interupsi selama iterasi
+            if self.isInterruptionRequested():
+                return ""
+                
             return df.to_string(index=False, header=True)
         except Exception as e:
             raise RuntimeError(f"CSV processing failed: {str(e)}") from e
@@ -170,35 +209,35 @@ class CustomVaderSentimentIntensityAnalyzer:
         return self.analyzer.polarity_scores(text)
 
 class CustomTextBlobSentimentAnalyzer:
-    def __init__(self, lexicon_file=None):
+    def __init__(self, custom_lexicon_file=None):
         self.lexicon = {}
-        self.negations = {"not", "no", "never", "none"}
-        self.intensifiers = {"very": 1.3, "extremely": 1.5}
-        if lexicon_file and os.path.exists(lexicon_file):
-            self.load_custom_lexicon(lexicon_file)
+        self.intensifiers = {}
+        self.negations = set()
+        if custom_lexicon_file:
+            self.load_custom_lexicon(custom_lexicon_file)
 
     def load_custom_lexicon(self, custom_lexicon_file):
         try:
             with open(custom_lexicon_file, "r", encoding="utf-8") as file:
                 for line in file:
                     parts = line.strip().split("\t")
-                    if len(parts) >= 2:
-                        word, measure = parts[0], parts[1]
-                        if measure.lower() == "negation":
-                            self.negations.add(word.lower())
+                    if len(parts) == 2:
+                        word, measure = parts
+                        if measure == "negation":
+                            self.negations.add(word)  # Simpan sebagai negasi
                         elif measure.startswith("intensifier:"):
                             try:
-                                multiplier = float(measure.split(":")[1])
-                                self.intensifiers[word.lower()] = multiplier
+                                self.intensifiers[word] = float(measure.split(":")[1])  # Simpan sebagai intensifier
                             except ValueError:
-                                pass
+                                logging.warning(f"Invalid intensifier value in lexicon: {line.strip()}")
                         else:
                             try:
-                                self.lexicon[word.lower()] = float(measure)
+                                self.lexicon[word] = float(measure)  # Simpan sebagai kata sentimen
                             except ValueError:
-                                pass
+                                logging.warning(f"Invalid sentiment value in lexicon: {line.strip()}")
+            logging.info(f"Custom lexicon loaded successfully from {custom_lexicon_file}")
         except Exception as e:
-            logging.error(f"Failed to load TextBlob custom lexicon: {e}")
+            logging.error(f"Failed to load custom lexicon: {e}")
 
     def analyze(self, text):
         from textblob import TextBlob
@@ -440,6 +479,7 @@ class WordCloudGenerator(QMainWindow):
         self.custom_color_palettes = {}
         self.current_figure = None
 
+        # Inisialisasi analyzer dan model
         from vaderSentiment.vaderSentiment import SentimentIntensityAnalyzer
         self.vader_analyzer = SentimentIntensityAnalyzer()
         self.sentiment_mode = "TextBlob"
@@ -450,14 +490,33 @@ class WordCloudGenerator(QMainWindow):
         self.flair_classifier = None
         self.flair_classifier_cuslang = None
 
+        # Manajemen thread dengan QMutex
         self.active_threads = []
         self.threads_mutex = QMutex()
 
-        self.file_loader_thread = None
+        # Thread startup dengan registrasi ke active_threads
         self.startup_thread = StartupThread()
+        
+        # --- MODIFIKASI PENTING: Registrasi thread ke active_threads ---
+        self.threads_mutex.lock()
+        self.active_threads.append(self.startup_thread)
+        self.threads_mutex.unlock()
+        
         self.startup_thread.start()
 
+        # Inisialisasi UI dan komponen lainnya
         self.initUI()
+
+        # Timer untuk cleanup thread yang sudah selesai
+        self.cleanup_timer = QTimer(self)
+        self.cleanup_timer.timeout.connect(self.cleanup_finished_threads)
+        self.cleanup_timer.start(5000)  # Cleanup setiap 5 detik
+
+    def cleanup_finished_threads(self):
+        """Membersihkan thread yang sudah selesai dari active_threads"""
+        self.threads_mutex.lock()
+        self.active_threads = [t for t in self.active_threads if t.isRunning()]
+        self.threads_mutex.unlock()
 
     def initUI(self):
         self.setWindowTitle("WCGen")
@@ -875,64 +934,154 @@ class WordCloudGenerator(QMainWindow):
         self.sentiment_thread.start()
 
     def stop_all_processes(self):
+        # Ambil salinan thread yang aktif dengan proteksi mutex
         self.threads_mutex.lock()
-        threads = self.active_threads.copy()
+        threads_to_stop = self.active_threads.copy()
         self.threads_mutex.unlock()
 
-        for thread in threads:
-            if thread.isRunning():
-                thread.requestInterruption()
-                thread.quit()
-                thread.wait(2000)
+        # Parameter waktu tunggu bertahap
+        SOFT_STOP_TIMEOUT = 1000  # 1 detik untuk quit()
+        FORCE_STOP_TIMEOUT = 500  # 0.5 detik tambahan untuk terminate()
 
+        stopped_threads = []
+        failed_to_stop = []
+
+        for thread in threads_to_stop:
+            try:
+                if thread.isRunning():
+                    # Fase 1: Permintaan penghentian graceful
+                    thread.requestInterruption()
+                    thread.quit()
+                    
+                    # Tunggu hingga thread berhenti secara normal
+                    if not thread.wait(SOFT_STOP_TIMEOUT):
+                        # Fase 2: Paksa berhenti jika timeout
+                        thread.terminate()
+                        if not thread.wait(FORCE_STOP_TIMEOUT):
+                            failed_to_stop.append(thread)
+                            continue
+                    
+                    stopped_threads.append(thread)
+                    
+            except RuntimeError as e:
+                logging.error(f"Error stopping thread {thread}: {str(e)}")
+                failed_to_stop.append(thread)
+            except Exception as e:
+                logging.critical(f"Critical error during thread termination: {str(e)}")
+                failed_to_stop.append(thread)
+
+        # Bersihkan daftar thread
         self.threads_mutex.lock()
-        self.active_threads.clear()
+        self.active_threads = [
+            t for t in self.active_threads 
+            if t not in stopped_threads and t not in failed_to_stop
+        ]
         self.threads_mutex.unlock()
 
+        # Update UI dan log
         self.progress_bar.setVisible(False)
         self.model_progress_bar.setVisible(False)
         self.wordcloud_progress_bar.setVisible(False)
-        self.active_threads.clear()
-        QMessageBox.information(self, "Processes Stopped", "All ongoing processes have been stopped.")
+        
+        # Tampilkan notifikasi
+        status_message = []
+        if stopped_threads:
+            status_message.append(f"Stopped {len(stopped_threads)} processes")
+        if failed_to_stop:
+            status_message.append(f"Failed to stop {len(failed_to_stop)} processes")
+        
+        final_message = "All processes stopped" if not status_message else "\n".join(status_message)
+        
+        QMessageBox.information(
+            self,
+            "Process Termination Report",
+            f"""<b>Process termination completed:</b>
+            <ul>
+                <li>✅ Successfully stopped: {len(stopped_threads)}</li>
+                <li>❌ Failed to stop: {len(failed_to_stop)}</li>
+            </ul>
+            <i>Note: Some background processes may still complete if termination failed</i>"""
+        )
+
+        # Force cleanup residual resources
+        self.cleanup_finished_threads()
 
     def closeEvent(self, event):
         import matplotlib.pyplot as plt
-
+        
+        # Tampilkan dialog konfirmasi
         reply = QMessageBox.question(
-            self, ":(", "Are you sure you want to quit?", QMessageBox.Yes | QMessageBox.No, QMessageBox.No
+            self,
+            "Konfirmasi Penutupan",
+            "<b>Apakah Anda yakin ingin keluar?</b><br>"
+            "Semua proses yang sedang berjalan akan dihentikan.",
+            QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
+            QMessageBox.StandardButton.No
         )
 
-        if reply == QMessageBox.Yes:
-            if self.current_figure:
+        if reply == QMessageBox.StandardButton.No:
+            event.ignore()
+            return
+
+        # Langkah 1: Hentikan semua proses aktif
+        self.stop_all_processes()
+
+        # Langkah 2: Tutup resource matplotlib
+        if self.current_figure:
+            try:
                 plt.close(self.current_figure)
                 self.current_figure = None
+            except Exception as e:
+                logging.error(f"Error closing figure: {e}")
 
-            self.threads_mutex.lock()
-            threads = self.active_threads.copy()
-            self.threads_mutex.unlock()
+        # Langkah 3: Pastikan semua thread benar-benar berhenti
+        self.threads_mutex.lock()
+        remaining_threads = self.active_threads.copy()
+        self.threads_mutex.unlock()
 
-            for thread in threads:
+        # Parameter waktu tunggu
+        TERMINATION_TIMEOUT = 2000  # 2 detik
+
+        for thread in remaining_threads:
+            try:
                 if thread.isRunning():
+                    # Fase 1 - Coba berhentikan dengan graceful
                     thread.requestInterruption()
                     thread.quit()
-                    thread.wait(2000)
+                    
+                    if not thread.wait(TERMINATION_TIMEOUT):
+                        # Fase 2 - Paksa berhentikan
+                        thread.terminate()
+                        thread.wait(TERMINATION_TIMEOUT)
+            except Exception as e:
+                logging.error(f"Error terminating thread {thread}: {str(e)}")
 
-            self.threads_mutex.lock()
-            self.active_threads.clear()
-            self.threads_mutex.unlock()
-
-            self.progress_bar.setVisible(False)
-            self.model_progress_bar.setVisible(False)
-            self.wordcloud_progress_bar.setVisible(False)
-            self.active_threads.clear()
-
-            for widget in QApplication.topLevelWidgets():
-                if widget is not self:
+        # Langkah 4: Bersihkan resource GUI
+        for widget in QApplication.topLevelWidgets():
+            if widget is not self:
+                try:
                     widget.close()
+                    widget.deleteLater()
+                except Exception as e:
+                    logging.error(f"Error closing widget: {str(e)}")
 
-            event.accept()
-        else:
-            event.ignore()
+        # Langkah 5: Hapus resource penting
+        try:
+            if self.flair_classifier:
+                del self.flair_classifier
+            if self.flair_classifier_cuslang:
+                del self.flair_classifier_cuslang
+            if self.textblob_analyzer:
+                del self.textblob_analyzer
+        except Exception as e:
+            logging.error(f"Error cleaning models: {str(e)}")
+
+        # Langkah 6: Bersihkan event loop
+        QApplication.processEvents()
+        
+        # Langkah 7: Finalisasi
+        event.accept()
+        logging.info("Application closed gracefully")
 
     def show_about(self):
         about_text = """

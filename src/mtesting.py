@@ -1,7 +1,6 @@
 import sys
 import os
 import asyncio
-import logging
 from collections import Counter
 from qasync import QEventLoop
 from deep_translator import GoogleTranslator
@@ -13,14 +12,11 @@ from PySide6.QtWidgets import (
 from PySide6.QtCore import QThread, Signal, Qt, QTimer, QMutex
 from PySide6.QtGui import QIcon
 import matplotlib
-
 matplotlib.use("QtAgg")
 from wordcloud import WordCloud, STOPWORDS
 import numpy as np
 from PIL import Image
 import socket
-
-logging.basicConfig(filename='app.log', level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
 
 class StartupThread(QThread):
     def run(self):
@@ -28,7 +24,7 @@ class StartupThread(QThread):
             import matplotlib.pyplot as plt
             from matplotlib.font_manager import FontProperties
         except Exception as e:
-            logging.error(f"StartupThread error: {e}")
+            print(f"StartupThread error: {e}")
 
 class FileLoaderThread(QThread):
     file_loaded = Signal(str, str)
@@ -40,7 +36,6 @@ class FileLoaderThread(QThread):
 
     def run(self):
         try:
-            # Pemeriksaan interupsi awal
             if self.isInterruptionRequested():
                 return
 
@@ -74,7 +69,6 @@ class FileLoaderThread(QThread):
             else:
                 raise ValueError(f"Unsupported file format: {os.path.splitext(self.file_path)[1]}")
 
-            # Pemeriksaan interupsi akhir sebelum emit
             if self.isInterruptionRequested():
                 return
 
@@ -84,7 +78,7 @@ class FileLoaderThread(QThread):
             self.file_loaded.emit(self.file_path, text_data)
 
         except Exception as e:
-            logging.error(f"Error loading file {os.path.basename(self.file_path)}: {e}")
+            print(f"Error loading file {os.path.basename(self.file_path)}: {e}")
             self.file_error.emit(f"Error loading {os.path.basename(self.file_path)}: {str(e)}")
 
     def extract_text_from_pdf(self, pdf_path):
@@ -147,7 +141,6 @@ class FileLoaderThread(QThread):
             if df.empty:
                 raise ValueError("CSV file is empty")
             
-            # Pemeriksaan interupsi selama iterasi
             if self.isInterruptionRequested():
                 return ""
                 
@@ -181,7 +174,7 @@ class CustomFileLoaderThread(QThread):
                 self.file_loaded.emit(model, True)
 
         except Exception as e:
-            logging.error(f"CustomFileLoaderThread error: {e}")
+            print(f"CustomFileLoaderThread error: {e}")
             self.file_loaded.emit(str(e), False)
 
 class CustomVaderSentimentIntensityAnalyzer:
@@ -203,7 +196,7 @@ class CustomVaderSentimentIntensityAnalyzer:
                         except ValueError:
                             pass
         except Exception as e:
-            logging.error(f"Failed to load custom lexicon: {e}")
+            print(f"Failed to load custom lexicon: {e}")
 
     def polarity_scores(self, text):
         return self.analyzer.polarity_scores(text)
@@ -224,20 +217,20 @@ class CustomTextBlobSentimentAnalyzer:
                     if len(parts) == 2:
                         word, measure = parts
                         if measure == "negation":
-                            self.negations.add(word)  # Simpan sebagai negasi
+                            self.negations.add(word)
                         elif measure.startswith("intensifier:"):
                             try:
-                                self.intensifiers[word] = float(measure.split(":")[1])  # Simpan sebagai intensifier
+                                self.intensifiers[word] = float(measure.split(":")[1])
                             except ValueError:
-                                logging.warning(f"Invalid intensifier value in lexicon: {line.strip()}")
+                                print(f"Invalid intensifier value in lexicon: {line.strip()}")
                         else:
                             try:
-                                self.lexicon[word] = float(measure)  # Simpan sebagai kata sentimen
+                                self.lexicon[word] = float(measure)
                             except ValueError:
-                                logging.warning(f"Invalid sentiment value in lexicon: {line.strip()}")
-            logging.info(f"Custom lexicon loaded successfully from {custom_lexicon_file}")
+                                print(f"Invalid sentiment value in lexicon: {line.strip()}")
+            print(f"Custom lexicon loaded successfully from {custom_lexicon_file}")
         except Exception as e:
-            logging.error(f"Failed to load custom lexicon: {e}")
+            print(f"Failed to load custom lexicon: {e}")
 
     def analyze(self, text):
         from textblob import TextBlob
@@ -284,7 +277,7 @@ class SentimentAnalysisThread(QThread):
             translated = GoogleTranslator(source="auto", target="en").translate(text)
             return translated
         except Exception as e:
-            logging.error(f"Translation error: {e}")
+            print(f"Translation error: {e}")
             return None
 
     def translate_text(self, text):
@@ -304,13 +297,13 @@ class SentimentAnalysisThread(QThread):
                     if result:
                         translated.append(result)
                 except Exception as e:
-                    logging.error(f"Failed to translate sentence: {e}")
+                    print(f"Failed to translate sentence: {e}")
             return ". ".join(translated)
 
         try:
             return loop.run_until_complete(run_translations())
         except Exception as e:
-            logging.error(f"Translation failed: {e}")
+            print(f"Translation failed: {e}")
             return None
         finally:
             if loop.is_running():
@@ -439,7 +432,7 @@ class SentimentAnalysisThread(QThread):
             self.sentiment_analyzed.emit(result)
 
         except Exception as e:
-            logging.error(f"Sentiment analysis error: {e}")
+            print(f"Sentiment analysis error: {e}")
             result["sentiment_label"] = f"Error: {str(e)}"
             self.sentiment_analyzed.emit(result)
 
@@ -466,7 +459,7 @@ class FlairModelLoaderThread(QThread):
                 model = FlairModelLoaderThread._cached_model
             self.model_loaded.emit(model)
         except Exception as e:
-            logging.error(f"Flair model loading error: {e}")
+            print(f"Flair model loading error: {e}")
             self.error_occurred.emit(str(e))
 
 class WordCloudGenerator(QMainWindow):
@@ -478,8 +471,8 @@ class WordCloudGenerator(QMainWindow):
         self.additional_stopwords = set()
         self.custom_color_palettes = {}
         self.current_figure = None
+        self.flair_first_load = True        
 
-        # Inisialisasi analyzer dan model
         from vaderSentiment.vaderSentiment import SentimentIntensityAnalyzer
         self.vader_analyzer = SentimentIntensityAnalyzer()
         self.sentiment_mode = "TextBlob"
@@ -490,27 +483,22 @@ class WordCloudGenerator(QMainWindow):
         self.flair_classifier = None
         self.flair_classifier_cuslang = None
 
-        # Manajemen thread dengan QMutex
         self.active_threads = []
         self.threads_mutex = QMutex()
 
-        # Thread startup dengan registrasi ke active_threads
         self.startup_thread = StartupThread()
         
-        # --- MODIFIKASI PENTING: Registrasi thread ke active_threads ---
         self.threads_mutex.lock()
         self.active_threads.append(self.startup_thread)
         self.threads_mutex.unlock()
         
         self.startup_thread.start()
 
-        # Inisialisasi UI dan komponen lainnya
         self.initUI()
 
-        # Timer untuk cleanup thread yang sudah selesai
         self.cleanup_timer = QTimer(self)
         self.cleanup_timer.timeout.connect(self.cleanup_finished_threads)
-        self.cleanup_timer.start(5000)  # Cleanup setiap 5 detik
+        self.cleanup_timer.start(5000)
 
     def cleanup_finished_threads(self):
         """Membersihkan thread yang sudah selesai dari active_threads"""
@@ -519,7 +507,7 @@ class WordCloudGenerator(QMainWindow):
         self.threads_mutex.unlock()
 
     def initUI(self):
-        self.setWindowTitle("WCGen")
+        self.setWindowTitle("WCGen + Sentiment Analysis (v1.5)")
         self.setFixedSize(550, 750)
         self.setWindowIcon(QIcon("D:/python_proj/wcloudgui/res/gs.ico"))
 
@@ -934,14 +922,12 @@ class WordCloudGenerator(QMainWindow):
         self.sentiment_thread.start()
 
     def stop_all_processes(self):
-        # Ambil salinan thread yang aktif dengan proteksi mutex
         self.threads_mutex.lock()
         threads_to_stop = self.active_threads.copy()
         self.threads_mutex.unlock()
 
-        # Parameter waktu tunggu bertahap
-        SOFT_STOP_TIMEOUT = 1000  # 1 detik untuk quit()
-        FORCE_STOP_TIMEOUT = 500  # 0.5 detik tambahan untuk terminate()
+        SOFT_STOP_TIMEOUT = 1000
+        FORCE_STOP_TIMEOUT = 500
 
         stopped_threads = []
         failed_to_stop = []
@@ -949,13 +935,10 @@ class WordCloudGenerator(QMainWindow):
         for thread in threads_to_stop:
             try:
                 if thread.isRunning():
-                    # Fase 1: Permintaan penghentian graceful
                     thread.requestInterruption()
                     thread.quit()
                     
-                    # Tunggu hingga thread berhenti secara normal
                     if not thread.wait(SOFT_STOP_TIMEOUT):
-                        # Fase 2: Paksa berhenti jika timeout
                         thread.terminate()
                         if not thread.wait(FORCE_STOP_TIMEOUT):
                             failed_to_stop.append(thread)
@@ -964,13 +947,12 @@ class WordCloudGenerator(QMainWindow):
                     stopped_threads.append(thread)
                     
             except RuntimeError as e:
-                logging.error(f"Error stopping thread {thread}: {str(e)}")
+                print(f"Error stopping thread {thread}: {str(e)}")
                 failed_to_stop.append(thread)
             except Exception as e:
-                logging.critical(f"Critical error during thread termination: {str(e)}")
+                print(f"Critical error during thread termination: {str(e)}")
                 failed_to_stop.append(thread)
 
-        # Bersihkan daftar thread
         self.threads_mutex.lock()
         self.active_threads = [
             t for t in self.active_threads 
@@ -978,12 +960,10 @@ class WordCloudGenerator(QMainWindow):
         ]
         self.threads_mutex.unlock()
 
-        # Update UI dan log
         self.progress_bar.setVisible(False)
         self.model_progress_bar.setVisible(False)
         self.wordcloud_progress_bar.setVisible(False)
         
-        # Tampilkan notifikasi
         status_message = []
         if stopped_threads:
             status_message.append(f"Stopped {len(stopped_threads)} processes")
@@ -996,25 +976,21 @@ class WordCloudGenerator(QMainWindow):
             self,
             "Process Termination Report",
             f"""<b>Process termination completed:</b>
-            <ul>
-                <li>✅ Successfully stopped: {len(stopped_threads)}</li>
-                <li>❌ Failed to stop: {len(failed_to_stop)}</li>
-            </ul>
+            <li>✅ Successfully stopped: {len(stopped_threads)}</li>
+            <li>❌ Failed to stop: {len(failed_to_stop)}</li>
             <i>Note: Some background processes may still complete if termination failed</i>"""
         )
 
-        # Force cleanup residual resources
         self.cleanup_finished_threads()
 
     def closeEvent(self, event):
         import matplotlib.pyplot as plt
         
-        # Tampilkan dialog konfirmasi
         reply = QMessageBox.question(
             self,
-            "Konfirmasi Penutupan",
-            "<b>Apakah Anda yakin ingin keluar?</b><br>"
-            "Semua proses yang sedang berjalan akan dihentikan.",
+            "Quit Confirmation",
+            "<b>Are you sure you want to quit?</b><br>"
+            "All ongoing processes will be terminated.",
             QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
             QMessageBox.StandardButton.No
         )
@@ -1023,49 +999,41 @@ class WordCloudGenerator(QMainWindow):
             event.ignore()
             return
 
-        # Langkah 1: Hentikan semua proses aktif
         self.stop_all_processes()
 
-        # Langkah 2: Tutup resource matplotlib
         if self.current_figure:
             try:
                 plt.close(self.current_figure)
                 self.current_figure = None
             except Exception as e:
-                logging.error(f"Error closing figure: {e}")
+                print(f"Error closing figure: {e}")
 
-        # Langkah 3: Pastikan semua thread benar-benar berhenti
         self.threads_mutex.lock()
         remaining_threads = self.active_threads.copy()
         self.threads_mutex.unlock()
 
-        # Parameter waktu tunggu
-        TERMINATION_TIMEOUT = 2000  # 2 detik
+        TERMINATION_TIMEOUT = 2000
 
         for thread in remaining_threads:
             try:
                 if thread.isRunning():
-                    # Fase 1 - Coba berhentikan dengan graceful
                     thread.requestInterruption()
                     thread.quit()
                     
                     if not thread.wait(TERMINATION_TIMEOUT):
-                        # Fase 2 - Paksa berhentikan
                         thread.terminate()
                         thread.wait(TERMINATION_TIMEOUT)
             except Exception as e:
-                logging.error(f"Error terminating thread {thread}: {str(e)}")
+                print(f"Error terminating thread {thread}: {str(e)}")
 
-        # Langkah 4: Bersihkan resource GUI
         for widget in QApplication.topLevelWidgets():
             if widget is not self:
                 try:
                     widget.close()
                     widget.deleteLater()
                 except Exception as e:
-                    logging.error(f"Error closing widget: {str(e)}")
+                    print(f"Error closing widget: {str(e)}")
 
-        # Langkah 5: Hapus resource penting
         try:
             if self.flair_classifier:
                 del self.flair_classifier
@@ -1074,14 +1042,12 @@ class WordCloudGenerator(QMainWindow):
             if self.textblob_analyzer:
                 del self.textblob_analyzer
         except Exception as e:
-            logging.error(f"Error cleaning models: {str(e)}")
+            print(f"Error cleaning models: {str(e)}")
 
-        # Langkah 6: Bersihkan event loop
         QApplication.processEvents()
         
-        # Langkah 7: Finalisasi
         event.accept()
-        logging.info("Application closed gracefully")
+        print("Application closed gracefully")
 
     def show_about(self):
         about_text = """
@@ -1238,7 +1204,7 @@ class WordCloudGenerator(QMainWindow):
 
         html_content = f"""
         <h3>Text Analysis Overview</h3>
-        <table border="1" cellspacing="0" cellpadding="5" width="100%">
+        <table border="1" cellspacing="0" cellpadding="2" width="100%">
             <tr><th align="left">Metric</th><th align="left">Value</th></tr>
             <tr><td>Text Length</td><td>{text_length} characters</td></tr>
             <tr><td>Word Count</td><td>{word_count}</td></tr>
@@ -1248,7 +1214,7 @@ class WordCloudGenerator(QMainWindow):
         </table>
         <br>
         <h3>Word Count Table</h3>
-        <table border="1" cellspacing="0" cellpadding="5" width="100%">
+        <table border="1" cellspacing="0" cellpadding="2" width="100%">
             <tr><th align="left">Word</th><th align="left">Count</th></tr>
         """
         for word, count in sorted_word_counts:
@@ -1463,20 +1429,18 @@ class WordCloudGenerator(QMainWindow):
     ):
         dialog = QDialog(self)
         dialog.setWindowModality(Qt.NonModal)
-        dialog.setWindowTitle("Sentiment Analysis")
-        dialog.setMinimumSize(500, 350)
-        dialog.setSizeGripEnabled(True)
+        dialog.setWindowTitle("Sentiment Analysis Result")
+        dialog.setMinimumSize(500, 270)
 
         layout = QVBoxLayout()
 
         text_browser = QTextBrowser()
 
         sentiment_result = f"""
-        <h3>Sentiment Analysis Results</h3>
-        <table border="1" cellspacing="0" cellpadding="5" width="100%">
+        <table border="1" cellspacing="0" cellpadding="2" width="100%">
             <tr><th align="left">Metric</th><th align="left">Value</th></tr>
             <tr><td>Analysis Mode</td><td>{analysis_mode}</td></tr>
-            <tr><td>Sentiment Label</td><td>{sentiment_label}</td></tr>
+            <tr><td>Sentiment Label</td><td><b>{sentiment_label}</b></td></tr>
             <tr><td>Positive Sentiment</td><td>{positive_score:.2f}</td></tr>
             <tr><td>Neutral Sentiment</td><td>{neutral_score:.2f}</td></tr>
             <tr><td>Negative Sentiment</td><td>{negative_score:.2f}</td></tr>
@@ -1513,7 +1477,7 @@ class WordCloudGenerator(QMainWindow):
         self.custom_model_button.setEnabled(mode == "Flair (Custom Model)")
 
         if mode == "Flair":
-            status_text = "Flair: Loading default model..." if not self.flair_classifier else "Ready"
+            status_text = "Flair: Ready" if self.flair_classifier else "Loading..."
             self.sentiment_button.setEnabled(bool(self.flair_classifier) and has_text)
             self.custom_model_button.setEnabled(False)
             if not self.flair_classifier:
@@ -1643,6 +1607,10 @@ class WordCloudGenerator(QMainWindow):
         if model:
             self.flair_classifier = model
             self.model_progress_bar.setVisible(False)
+
+            if self.flair_first_load:
+                QMessageBox.information(self, "Ready", "Flair library loaded successfully!")
+                self.flair_first_load = False
 
             if self.sentiment_mode == "Flair (Custom Model)":
                 self.custom_model_button.setEnabled(True)

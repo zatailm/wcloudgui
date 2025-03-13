@@ -1616,7 +1616,7 @@ class WordCloudGenerator(QMainWindow):
                 self.custom_model_button.setEnabled(True)
                 if not self.flair_classifier_cuslang:
                     QMessageBox.warning(
-                        self, "Custom Model Required", "Flair library loaded successfully!\nPlease load your custom model using the 'Load Model' button"
+                        self, "Custom Model Required", "Please load your custom model using the 'Load Model' button"
                     )
 
             if self.flair_loader_thread is not None:

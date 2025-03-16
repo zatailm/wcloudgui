@@ -1109,7 +1109,7 @@ class WordCloudGenerator(QMainWindow):
         self.thread_pool.clear()
         if torch.cuda.is_available():
             torch.cuda.empty_cache()
-        logging.shutdown()
+        # logging.shutdown()
 
         if self.current_figure:
             try:

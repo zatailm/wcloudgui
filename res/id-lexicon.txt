@@ -283,6 +283,10 @@ hygienis	2.8
 juicy	2.5
 lezat	2.8
 mantap jiwa	3.0
+10/10	3.0
+100/10	3.0
+1000/10	3.0
+11/10	3.0
 menu variatif	2.8
 mie kenyal	2.5
 segar	2.5
@@ -291,6 +295,7 @@ berkualitas	2.8
 porsi besar	2.5
 rasa otentik	2.8
 recommended	3.0
+yummy	3.0
 sausnya gurih	2.5
 sambalnya pedas pas	2.5
 service oke	2.8

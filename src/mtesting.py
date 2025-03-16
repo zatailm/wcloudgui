@@ -1181,7 +1181,7 @@ class WordCloudGenerator(QMainWindow):
         <p>WCGen is free for personal and educational use. For commercial applications, please refer to the licensing terms.</p>
         <h3>📚 How to Cite WCGen</h3>
         <p>If you use WCGen in your research or publication, please cite it as follows (APA 7):</p>
-        <p>Ilmam, M. A. Z. (2025). <i>WCGen - Word Cloud Generator + Sentiment Analysis</i> (Version 1.5) [Software]. Zenodo. <a href="https://doi.org/10.5281/zenodo.14932650">https://doi.org/10.5281/zenodo.14932650</a></p>
+        <p>Ilmam, M. A. Z. (2025). <i>WCGen - Word Cloud Generator + Sentiment Analysis</i> (Version 1.5) [Software]. Zenodo. <a href="https://doi.org/10.5281/zenodo.15034843">https://doi.org/10.5281/zenodo.14932650</a></p>
         """
 
         dialog = QDialog(self)

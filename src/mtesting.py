@@ -1,10 +1,10 @@
 import sys
 import os
 import re
-from pathlib import Path
+# from pathlib import Path
 from functools import lru_cache
 import torch
-import logging.handlers
+# import logging.handlers
 os.environ["QT_API"] = "pyside6"
 import asyncio
 from collections import Counter
@@ -24,50 +24,50 @@ import numpy as np
 from PIL import Image
 import socket
 
-# Configure logging
-root_path = Path(__file__).parent
-log_file = root_path / "app.log"
-log_file.parent.mkdir(exist_ok=True, parents=True)
+# # Configure logging
+# root_path = Path(__file__).parent
+# log_file = root_path / "app.log"
+# log_file.parent.mkdir(exist_ok=True, parents=True)
 
-handler = logging.handlers.RotatingFileHandler(
-    log_file, maxBytes=1024*1024, backupCount=5
-)
-logging.basicConfig(
-    level=logging.INFO,
-    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
-    handlers=[handler, logging.StreamHandler()]
-)
-logger = logging.getLogger(__name__)
+# handler = logging.handlers.RotatingFileHandler(
+#     log_file, maxBytes=1024*1024, backupCount=5
+# )
+# logging.basicConfig(
+#     level=logging.INFO,
+#     format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
+#     handlers=[handler, logging.StreamHandler()]
+# )
+# logger = logging.getLogger(__name__)
 
-# Dependency validation
-REQUIRED_DEPS = {
-    'pypdf': 'python-pypdf',
-    'docx': 'python-docx',
-    'pandas': 'pandas',
-    'textblob': 'textblob',
-    'flair': 'flair',
-    'vaderSentiment': 'vaderSentiment',
-    'torch': 'torch'
-}
+# # Dependency validation
+# REQUIRED_DEPS = {
+#     'pypdf': 'python-pypdf',
+#     'docx': 'python-docx',
+#     'pandas': 'pandas',
+#     'textblob': 'textblob',
+#     'flair': 'flair',
+#     'vaderSentiment': 'vaderSentiment',
+#     'torch': 'torch'
+# }
 
-def validate_dependencies():
-    missing = []
-    for module, package in REQUIRED_DEPS.items():
-        try:
-            __import__(module)
-        except ImportError:
-            missing.append(package)
-    return missing
+# def validate_dependencies():
+#     missing = []
+#     for module, package in REQUIRED_DEPS.items():
+#         try:
+#             __import__(module)
+#         except ImportError:
+#             missing.append(package)
+#     return missing
 
-# GPU Memory Management
-def setup_gpu():
-    if torch.cuda.is_available():
-        torch.cuda.empty_cache()
-        device = torch.device('cuda')
-        torch.backends.cudnn.benchmark = True
-    else:
-        device = torch.device('cpu')
-    return device
+# # GPU Memory Management
+# def setup_gpu():
+#     if torch.cuda.is_available():
+#         torch.cuda.empty_cache()
+#         device = torch.device('cuda')
+#         torch.backends.cudnn.benchmark = True
+#     else:
+#         device = torch.device('cpu')
+#     return device
 
 # Path sanitization
 def sanitize_path(path):
@@ -551,18 +551,18 @@ class FlairModelLoaderThread(QThread):
 class WordCloudGenerator(QMainWindow):
     def __init__(self):
         super().__init__()
-        # Validate dependencies
-        missing_deps = validate_dependencies()
-        if missing_deps:
-            QMessageBox.critical(
-                self,
-                "Missing Dependencies",
-                f"Please install required packages: {', '.join(missing_deps)}"
-            )
-            sys.exit(1)
+        # # Validate dependencies
+        # missing_deps = validate_dependencies()
+        # if missing_deps:
+        #     QMessageBox.critical(
+        #         self,
+        #         "Missing Dependencies",
+        #         f"Please install required packages: {', '.join(missing_deps)}"
+        #     )
+        #     sys.exit(1)
 
-        # Initialize GPU if available
-        self.device = setup_gpu()
+        # # Initialize GPU if available
+        # self.device = setup_gpu()
         
         # Initialize components
         self.thread_pool = QThreadPool()
@@ -1322,7 +1322,7 @@ class WordCloudGenerator(QMainWindow):
             <tr><td>Most Frequent Words</td><td>{", ".join(most_frequent_words)}</td></tr>
         </table>
         <br>
-        <h3>Word Count Table</h3>
+        <h3>Word Count</h3>
         <table border="1" cellspacing="0" cellpadding="2" width="100%">
             <tr><th align="left">Word</th><th align="left">Count</th></tr>
         """

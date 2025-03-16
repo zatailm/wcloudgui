@@ -39,6 +39,7 @@ include_files = [
     # ("C:/Users/zata/AppData/Roaming/nltk_data", "lib/nltk_data"),
     # ("D:/miniconda3/envs/wcgen/Lib/site-packages/matplotlib/mpl-data", "lib/matplotlib/mpl-data"),
     ("D:/miniconda3/envs/wcgen/Lib/site-packages/transformers", "lib/transformers"),  # ✅ Tambahkan transformers
+    "D:/python_proj/wcloudgui/res/LICENSE.txt",  # ✅ Tambahkan LICENSE.txt"
 ] + dll_files  # ✅ Tambahkan DLL
 
 build_exe_options = {
@@ -61,13 +62,13 @@ build_exe_options = {
 }
 
 setup(
-    name="WCGen15beta",
-    version="1.5b0",
+    name="WCGen1.5",
+    version="1.5",
     description="Word Cloud Generator + Sentiment Analysis",
     options={"build_exe": build_exe_options},
     executables=[
         Executable(
-            "wcgen15beta.py",
+            "mtesting.py",
             base="Win32GUI" if sys.platform == "win32" else None,  # GUI Mode
             icon="D:/python_proj/wcloudgui/res/gs.ico"
         )

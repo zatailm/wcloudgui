@@ -1,5 +1,6 @@
 import sys
 import os
+os.environ["QT_API"] = "pyside6"
 import asyncio
 from collections import Counter
 from qasync import QEventLoop
@@ -320,7 +321,7 @@ class SentimentAnalysisThread(QThread):
             polarity = blob.sentiment.polarity
             subjectivity = blob.sentiment.subjectivity
 
-        if abs(polarity) < 0.1:
+        if abs(polarity) < 0.05:
             neutral_score = 1.0
             positive_score = negative_score = 0.0
         else:
@@ -501,7 +502,6 @@ class WordCloudGenerator(QMainWindow):
         self.cleanup_timer.start(5000)
 
     def cleanup_finished_threads(self):
-        """Membersihkan thread yang sudah selesai dari active_threads"""
         self.threads_mutex.lock()
         self.active_threads = [t for t in self.active_threads if t.isRunning()]
         self.threads_mutex.unlock()
@@ -728,7 +728,7 @@ class WordCloudGenerator(QMainWindow):
         hline.setFrameShadow(QFrame.Sunken)
         layout.addWidget(hline, 16, 0, 1, 6)
 
-        self.generate_wordcloud_button = QPushButton("Generate WordCloud", self)
+        self.generate_wordcloud_button = QPushButton("Generate Word Cloud", self)
         self.generate_wordcloud_button.setFixedHeight(50)
         self.generate_wordcloud_button.setToolTip("Generate the word cloud")
         self.generate_wordcloud_button.clicked.connect(self.generate_wordcloud)
@@ -752,7 +752,7 @@ class WordCloudGenerator(QMainWindow):
         self.text_stats_button.setEnabled(False)
         layout.addWidget(self.text_stats_button, 19, 0, 1, 3)
 
-        self.save_wc_button = QPushButton("Save WordCloud", self)
+        self.save_wc_button = QPushButton("Save Word Cloud", self)
         self.save_wc_button.setFixedHeight(30)
         self.save_wc_button.setToolTip("Save the generated word cloud")
         self.save_wc_button.clicked.connect(self.simpan_wordcloud)

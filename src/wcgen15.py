@@ -1,5 +1,10 @@
 import sys
 import os
+import re
+# from pathlib import Path
+from functools import lru_cache
+import torch
+# import logging.handlers
 os.environ["QT_API"] = "pyside6"
 import asyncio
 from collections import Counter
@@ -10,7 +15,7 @@ from PySide6.QtWidgets import (
     QVBoxLayout, QGridLayout, QWidget, QLineEdit, QComboBox, QSpinBox, QDialog,
     QTextEdit, QProgressBar, QFrame, QColorDialog, QInputDialog, QTextBrowser,
 )
-from PySide6.QtCore import QThread, Signal, Qt, QTimer, QMutex
+from PySide6.QtCore import QThread, Signal, Qt, QTimer, QMutex, QRunnable, QThreadPool
 from PySide6.QtGui import QIcon
 import matplotlib
 matplotlib.use("QtAgg")
@@ -18,6 +23,86 @@ from wordcloud import WordCloud, STOPWORDS
 import numpy as np
 from PIL import Image
 import socket
+
+# Configure logging
+root_path = Path(__file__).parent
+log_file = root_path / "app.log"
+log_file.parent.mkdir(exist_ok=True, parents=True)
+
+handler = logging.handlers.RotatingFileHandler(
+    log_file, maxBytes=1024*1024, backupCount=5
+)
+logging.basicConfig(
+    level=logging.INFO,
+    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
+    handlers=[handler, logging.StreamHandler()]
+)
+logger = logging.getLogger(__name__)
+
+# Dependency validation
+REQUIRED_DEPS = {
+    'pypdf': 'python-pypdf',
+    'docx': 'python-docx',
+    'pandas': 'pandas',
+    'textblob': 'textblob',
+    'flair': 'flair',
+    'vaderSentiment': 'vaderSentiment',
+    'torch': 'torch'
+}
+
+def validate_dependencies():
+    missing = []
+    for module, package in REQUIRED_DEPS.items():
+        try:
+            __import__(module)
+        except ImportError:
+            missing.append(package)
+    return missing
+
+# GPU Memory Management
+def setup_gpu():
+    if torch.cuda.is_available():
+        torch.cuda.empty_cache()
+        device = torch.device('cuda')
+        torch.backends.cudnn.benchmark = True
+    else:
+        device = torch.device('cpu')
+    return device
+
+# Path sanitization
+def sanitize_path(path):
+    """Sanitize file path to prevent path traversal attacks"""
+    path = os.path.normpath(path)
+    base_dir = os.path.abspath(os.path.dirname(__file__))
+    abs_path = os.path.abspath(path)
+    if not abs_path.startswith(base_dir):
+        raise ValueError("Path traversal attempt detected")
+    return path
+
+# Caching
+@lru_cache(maxsize=128)
+def load_stopwords():
+    return set(STOPWORDS)
+
+class ChunkProcessor:
+    """Process large files in chunks"""
+    CHUNK_SIZE = 1024 * 1024  # 1MB chunks
+    
+    @staticmethod
+    def process_file_chunks(file_path, callback):
+        total_size = os.path.getsize(file_path)
+        processed = 0
+        
+        with open(file_path, 'r', encoding='utf-8') as f:
+            while True:
+                chunk = f.read(ChunkProcessor.CHUNK_SIZE)
+                if not chunk:
+                    break
+                    
+                callback(chunk)
+                processed += len(chunk)
+                progress = (processed / total_size) * 100
+                yield progress
 
 class StartupThread(QThread):
     def run(self):
@@ -466,6 +551,23 @@ class FlairModelLoaderThread(QThread):
 class WordCloudGenerator(QMainWindow):
     def __init__(self):
         super().__init__()
+        # # Validate dependencies
+        # missing_deps = validate_dependencies()
+        # if missing_deps:
+        #     QMessageBox.critical(
+        #         self,
+        #         "Missing Dependencies",
+        #         f"Please install required packages: {', '.join(missing_deps)}"
+        #     )
+        #     sys.exit(1)
+
+        # # Initialize GPU if available
+        # self.device = setup_gpu()
+        
+        # Initialize components
+        self.thread_pool = QThreadPool()
+        self.thread_pool.setMaxThreadCount(5)
+        
         self.file_path = ""
         self.text_data = ""
         self.mask_path = ""
@@ -502,7 +604,6 @@ class WordCloudGenerator(QMainWindow):
         self.cleanup_timer.start(5000)
 
     def cleanup_finished_threads(self):
-        """Membersihkan thread yang sudah selesai dari active_threads"""
         self.threads_mutex.lock()
         self.active_threads = [t for t in self.active_threads if t.isRunning()]
         self.threads_mutex.unlock()
@@ -806,7 +907,7 @@ class WordCloudGenerator(QMainWindow):
             QProgressBar::chunk { background-color: orange; width: 1px; margin: 0px; }
         """)
         self.model_progress_bar.setVisible(False)
-        layout.addWidget(self.model_progress_bar, 23, 2, 1, 4)
+        layout.addWidget(self.model_progress_bar, 22, 0, 1, 2)
 
         self.sentiment_button = QPushButton("Analyze Sentiment", self)
         self.sentiment_button.setFixedHeight(50)
@@ -1000,7 +1101,15 @@ class WordCloudGenerator(QMainWindow):
             event.ignore()
             return
 
-        self.stop_all_processes()
+        self.cleanup()
+        event.accept()
+
+    def cleanup(self):
+        """Clean up resources before exit"""
+        self.thread_pool.clear()
+        if torch.cuda.is_available():
+            torch.cuda.empty_cache()
+        logging.shutdown()
 
         if self.current_figure:
             try:
@@ -1047,7 +1156,6 @@ class WordCloudGenerator(QMainWindow):
 
         QApplication.processEvents()
         
-        event.accept()
         print("Application closed gracefully")
 
     def show_about(self):
@@ -1073,7 +1181,7 @@ class WordCloudGenerator(QMainWindow):
         <p>WCGen is free for personal and educational use. For commercial applications, please refer to the licensing terms.</p>
         <h3>📚 How to Cite WCGen</h3>
         <p>If you use WCGen in your research or publication, please cite it as follows (APA 7):</p>
-        <p>Ilmam, M. A. Z. (2025). <i>WCGen - Word Cloud Generator + Sentiment Analysis</i> (Version 1.5) [Software]. Zenodo. <a href="https://doi.org/10.5281/zenodo.14932650">https://doi.org/10.5281/zenodo.14932650</a></p>
+        <p>Ilmam, M. A. Z. (2025). <i>WCGen - Word Cloud Generator + Sentiment Analysis</i> (Version 1.5) [Software]. Zenodo. <a href="https://doi.org/10.5281/zenodo.15034843">https://doi.org/10.5281/zenodo.14932650</a></p>
         """
 
         dialog = QDialog(self)
@@ -1214,7 +1322,7 @@ class WordCloudGenerator(QMainWindow):
             <tr><td>Most Frequent Words</td><td>{", ".join(most_frequent_words)}</td></tr>
         </table>
         <br>
-        <h3>Word Count Table</h3>
+        <h3>Word Count</h3>
         <table border="1" cellspacing="0" cellpadding="2" width="100%">
             <tr><th align="left">Word</th><th align="left">Count</th></tr>
         """
@@ -1332,7 +1440,7 @@ class WordCloudGenerator(QMainWindow):
                 font_path=None if self.font_choice.currentText() == "Default" else self.font_choice.currentText()
             ).generate(self.text_data)
             wc.to_file(save_path)
-            QMessageBox.information(self, "Succeed", "WordCloud saved!")
+            QMessageBox.information(self, "Succeed", "Word cloud saved!")
         except Exception as e:
             QMessageBox.critical(self, "Error", f"Failed to save word cloud: {e}")
 

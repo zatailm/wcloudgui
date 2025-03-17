@@ -4,7 +4,6 @@ import re
 from pathlib import Path
 from functools import lru_cache
 import torch
-import logging.handlers
 os.environ["QT_API"] = "pyside6"
 import asyncio
 from collections import Counter
@@ -23,55 +22,17 @@ from wordcloud import WordCloud, STOPWORDS
 import numpy as np
 from PIL import Image
 import socket
+import base64
 
-# Configure logging
-root_path = Path(__file__).parent
-log_file = root_path / "app.log"
-log_file.parent.mkdir(exist_ok=True, parents=True)
+# App icon
+APP_DIR = Path(__file__).parent
+ICON_PATH = APP_DIR / "icon.ico"
 
-handler = logging.handlers.RotatingFileHandler(
-    log_file, maxBytes=1024*1024, backupCount=5
-)
-logging.basicConfig(
-    level=logging.INFO,
-    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
-    handlers=[handler, logging.StreamHandler()]
-)
-logger = logging.getLogger(__name__)
+ABOUT_TEXT = "PGgyPvCfjJ8gV0NHZW4gLSBXb3JkIENsb3VkIEdlbmVyYXRvciArIFNlbnRpbWVudCBBbmFseXNpczwvaDI+CjxwPjxiPlZlcnNpb246PC9iPiAxLjU8L3A+CjxwPiZjb3B5OyAyMDI1IE0uIEFkaWIgWmF0YSBJbG1hbTwvcD4KPHA+PGEgaHJlZj0iaHR0cHM6Ly9naXRodWIuY29tL3phdGFpbG0vd2Nsb3VkZ3VpIj7wn5OMIEdpdEh1YiBSZXBvc2l0b3J5PC9hPjwvcD4KPGgzPvCflI0gV2hhdCBpcyBXQ0dlbj88L2gzPgo8cD5XQ0dlbiBpcyBhbiBhZHZhbmNlZCB5ZXQgZWFzeS10by11c2UgYXBwbGljYXRpb24gZGVzaWduZWQgZm9yIGNyZWF0aW5nIHZpc3VhbGx5IGFwcGVhbGluZyB3b3JkIGNsb3VkcyBmcm9tIHRleHQgZGF0YS48L3A+CjxoMz7wn5qAIEtleSBGZWF0dXJlczwvaDM+Cjx1bD4KICAgIDxsaT48Yj5TdXBwb3J0cyBtdWx0aXBsZSBmaWxlIGZvcm1hdHM6PC9iPiBUWFQsIFBERiwgRE9DL0RPQ1gsIENTViwgWExTWDwvbGk+CiAgICA8bGk+PGI+RnVsbHkgY3VzdG9taXphYmxlIHdvcmQgY2xvdWRzOjwvYj4gQ2hvb3NlIGNvbG9ycywgZm9udHMsIHNoYXBlcywgYW5kIHRoZW1lczwvbGk+CiAgICA8bGk+PGI+U3RvcHdvcmQgZmlsdGVyaW5nOjwvYj4gUmVtb3ZlIGNvbW1vbiB3b3JkcyBmb3IgY2xlYXJlciBpbnNpZ2h0czwvbGk+CiAgICA8bGk+PGI+U21hcnQgdGV4dCBwcm9jZXNzaW5nOjwvYj4gSGFuZGxlcyBsYXJnZSBkYXRhc2V0cyBlZmZpY2llbnRseTwvbGk+CiAgICA8bGk+PGI+RXhwb3J0ICYgc2F2ZSBvcHRpb25zOjwvYj4gSGlnaC1yZXNvbHV0aW9uIGltYWdlIHNhdmluZyBpbiBtdWx0aXBsZSBmb3JtYXRzPC9saT4KICAgIDxsaT48Yj5TZW50aW1lbnQgYW5hbHlzaXM6PC9iPiBPcHRpb25hbCBhbmFseXNpcyB1c2luZyBUZXh0QmxvYiwgVkFERVIsIGFuZCBGbGFpcjwvbGk+CjwvdWw+CjxoMz7wn5OWIEhvdyBXQ0dlbiBIZWxwcyBZb3U8L2gzPgo8cD5XaGV0aGVyIHlvdeKAmXJlIGFuYWx5emluZyBjdXN0b21lciBmZWVkYmFjaywgY29uZHVjdGluZyBhY2FkZW1pYyByZXNlYXJjaCwgb3IgdmlzdWFsaXppbmcgdGV4dC1iYXNlZCBpbnNpZ2h0cywgV0NHZW4gc2ltcGxpZmllcyB0aGUgcHJvY2VzcyBhbmQgZW5oYW5jZXMgeW91ciB3b3JrZmxvdyB3aXRoIGl0cyBpbnR1aXRpdmUgZGVzaWduIGFuZCBwb3dlcmZ1bCBmZWF0dXJlcy48L3A+CjxoMz7wn5OcIExpY2Vuc2U8L2gzPgo8cD5XQ0dlbiBpcyBmcmVlIGZvciBwZXJzb25hbCBhbmQgZWR1Y2F0aW9uYWwgdXNlLiBGb3IgY29tbWVyY2lhbCBhcHBsaWNhdGlvbnMsIHBsZWFzZSByZWZlciB0byB0aGUgbGljZW5zaW5nIHRlcm1zLjwvcD4KPGgzPvCfk5ogSG93IHRvIENpdGUgV0NHZW48L2gzPgo8cD5JZiB5b3UgdXNlIFdDR2VuIGluIHlvdXIgcmVzZWFyY2ggb3IgcHVibGljYXRpb24sIHBsZWFzZSBjaXRlIGl0IGFzIGZvbGxvd3MgKEFQQSA3KTo8L3A+CjxwPklsbWFtLCBNLiBBLiBaLiAoMjAyNSkuIDxpPldDR2VuIC0gV29yZCBDbG91ZCBHZW5lcmF0b3IgKyBTZW50aW1lbnQgQW5hbHlzaXM8L2k+IChWZXJzaW9uIDEuNSkgW1NvZnR3YXJlXS4gWmVub2RvLiA8YSBocmVmPSJodHRwczovL2RvaS5vcmcvMTAuNTI4MS96ZW5vZG8uMTUwMzQ4NDMiPmh0dHBzOi8vZG9pLm9yZy8xMC41MjgxL3plbm9kby4xNDkzMjY1MDwvYT48L3A+Cg=="
 
-# Dependency validation
-REQUIRED_DEPS = {
-    'pypdf': 'python-pypdf',
-    'docx': 'python-docx',
-    'pandas': 'pandas',
-    'textblob': 'textblob',
-    'flair': 'flair',
-    'vaderSentiment': 'vaderSentiment',
-    'torch': 'torch'
-}
+MODE_INFO = "PGgyPlNlbnRpbWVudCBBbmFseXNpcyBNb2RlczwvaDI+CjxwPlNlbGVjdCB0aGUgbW9zdCBzdWl0YWJsZSBzZW50aW1lbnQgYW5hbHlzaXMgbWV0aG9kIGJhc2VkIG9uIHlvdXIgdGV4dCB0eXBlIGFuZCBhbmFseXNpcyBuZWVkcy48L3A+CjxoMz7wn5OdIFRleHRCbG9iPC9oMz4KPHA+PGI+QmVzdCBmb3I6PC9iPiBGb3JtYWwgdGV4dHMsIHdlbGwtc3RydWN0dXJlZCBkb2N1bWVudHMsIG5ld3MgYXJ0aWNsZXMsIHJlc2VhcmNoIHBhcGVycywgYW5kIHJlcG9ydHMuPC9wPgo8cD5UZXh0QmxvYiBpcyBhIGxleGljb24tYmFzZWQgc2VudGltZW50IGFuYWx5c2lzIHRvb2wgdGhhdCBwcm92aWRlcyBhIHNpbXBsZSB5ZXQgZWZmZWN0aXZlIGFwcHJvYWNoIGZvciBldmFsdWF0aW5nIHRoZSBzZW50aW1lbnQgb2Ygc3RydWN0dXJlZCB0ZXh0LiBJdCBhc3NpZ25zIGEgcG9sYXJpdHkgc2NvcmUgKHBvc2l0aXZlLCBuZWdhdGl2ZSwgb3IgbmV1dHJhbCkgYW5kIGNhbiBhbHNvIGFuYWx5emUgc3ViamVjdGl2aXR5IGxldmVscy48L3A+CjxoMz7wn5KsIFZBREVSIChWYWxlbmNlIEF3YXJlIERpY3Rpb25hcnkgYW5kIHNFbnRpbWVudCBSZWFzb25lcik8L2gzPgo8cD48Yj5CZXN0IGZvcjo8L2I+IFNvY2lhbCBtZWRpYSBwb3N0cywgdHdlZXRzLCBzaG9ydCBjb21tZW50cywgY2hhdCBtZXNzYWdlcywgYW5kIGluZm9ybWFsIHJldmlld3MuPC9wPgo8cD5WQURFUiBpcyBzcGVjaWZpY2FsbHkgZGVzaWduZWQgZm9yIGFuYWx5emluZyBzaG9ydCwgaW5mb3JtYWwgdGV4dHMgdGhhdCBvZnRlbiBjb250YWluIHNsYW5nLCBlbW9qaXMsIGFuZCBwdW5jdHVhdGlvbi1iYXNlZCBlbW90aW9ucy4gSXQgaXMgYSBydWxlLWJhc2VkIHNlbnRpbWVudCBhbmFseXNpcyBtb2RlbCB0aGF0IGVmZmljaWVudGx5IGRldGVybWluZXMgc2VudGltZW50IGludGVuc2l0eSBhbmQgd29ya3MgZXhjZXB0aW9uYWxseSB3ZWxsIGZvciByZWFsLXRpbWUgYXBwbGljYXRpb25zLjwvcD4KPGgzPvCflKwgRmxhaXI8L2gzPgo8cD48Yj5CZXN0IGZvcjo8L2I+IExvbmctZm9ybSBjb250ZW50LCBwcm9kdWN0IHJldmlld3MsIHByb2Zlc3Npb25hbCBkb2N1bWVudHMsIGFuZCBBSS1iYXNlZCBkZWVwIHNlbnRpbWVudCBhbmFseXNpcy48L3A+CjxwPkZsYWlyIHV0aWxpemVzIGRlZXAgbGVhcm5pbmcgdGVjaG5pcXVlcyBmb3Igc2VudGltZW50IGFuYWx5c2lzLCBtYWtpbmcgaXQgaGlnaGx5IGFjY3VyYXRlIGZvciBjb21wbGV4IHRleHRzLiBJdCBpcyBpZGVhbCBmb3IgYW5hbHl6aW5nIGxhcmdlLXNjYWxlIHRleHR1YWwgZGF0YSwgY2FwdHVyaW5nIGNvbnRleHQgbW9yZSBlZmZlY3RpdmVseSB0aGFuIHRyYWRpdGlvbmFsIHJ1bGUtYmFzZWQgbW9kZWxzLiBIb3dldmVyLCBpdCByZXF1aXJlcyBtb3JlIGNvbXB1dGF0aW9uYWwgcmVzb3VyY2VzIGNvbXBhcmVkIHRvIFRleHRCbG9iIGFuZCBWQURFUi48L3A+CjxoMz7wn4yQIEltcG9ydGFudCBOb3RlIGZvciBMYW5ndWFnZSBTdXBwb3J0PC9oMz4KPHA+V2hpbGUgdGhpcyBhcHBsaWNhdGlvbiBzdXBwb3J0cyBub24tRW5nbGlzaCB0ZXh0IHRocm91Z2ggYXV0b21hdGljIHRyYW5zbGF0aW9uLCBpdCBpcyA8Yj5oaWdobHkgcmVjb21tZW5kZWQ8L2I+IHRvIHVzZSA8Yj5tYW51YWxseSB0cmFuc2xhdGVkIGFuZCByZWZpbmVkIEVuZ2xpc2ggdGV4dDwvYj4gZm9yIHRoZSBtb3N0IGFjY3VyYXRlIHNlbnRpbWVudCBhbmFseXNpcy4gVGhlIGJ1aWx0LWluIGF1dG9tYXRpYyB0cmFuc2xhdGlvbiBmZWF0dXJlIG1heSBub3QgYWx3YXlzIGZ1bmN0aW9uIGNvcnJlY3RseSwgbGVhZGluZyB0byBwb3RlbnRpYWwgbWlzaW50ZXJwcmV0YXRpb25zIG9yIGluYWNjdXJhdGUgc2VudGltZW50IHJlc3VsdHMuPC9wPgo8cD5Gb3IgdGhlIGJlc3QgcGVyZm9ybWFuY2UsIGVuc3VyZSB0aGF0IG5vbi1FbmdsaXNoIHRleHQgaXMgcHJvcGVybHkgcmV2aWV3ZWQgYW5kIGFkanVzdGVkIGJlZm9yZSBzZW50aW1lbnQgYW5hbHlzaXMuIPCfmoA8L3A+CjxoMz7wn5OMIEN1c3RvbSBMZXhpY29uIEZvcm1hdCBFeGFtcGxlPC9oMz4KPHA+QmVsb3cgaXMgYW4gZXhhbXBsZSBvZiBhIGN1c3RvbSBsZXhpY29uIGZvcm1hdCBmb3Igc2VudGltZW50IGFuYWx5c2lzOjwvcD4KPHByZSBzdHlsZT0nYmFja2dyb3VuZC1jb2xvcjojZjRmNGY0OyBwYWRkaW5nOjEwcHg7IGJvcmRlci1yYWRpdXM6NXB4Oyc+CmV4Y2VsbGVudCAgIDEuNQphd2Z1bCAgICAgIC0xLjUKbm90ICAgICAgICBuZWdhdGlvbiAgICAgICAgICMgTWFyayBhcyBuZWdhdGlvbiB3b3JkCmludGVuc2VseSAgaW50ZW5zaWZpZXI6MS43ICAjIEN1c3RvbSBpbnRlbnNpZmllciB3aXRoIG11bHRpcGxpZXIKPC9wcmU+CjxwPlRoaXMgY3VzdG9tIGxleGljb24gYWxsb3dzIGZpbmUtdHVuaW5nIG9mIHNlbnRpbWVudCBzY29yZXMgYnkgYWRkaW5nIGN1c3RvbSB3b3JkcywgbmVnYXRpb25zLCBhbmQgaW50ZW5zaWZpZXJzIHRvIGltcHJvdmUgc2VudGltZW50IGFuYWx5c2lzIGFjY3VyYWN5LjwvcD4K"
 
-def validate_dependencies():
-    missing = []
-    for module, package in REQUIRED_DEPS.items():
-        try:
-            __import__(module)
-        except ImportError:
-            missing.append(package)
-    return missing
-
-# GPU Memory Management
-def setup_gpu():
-    if torch.cuda.is_available():
-        torch.cuda.empty_cache()
-        device = torch.device('cuda')
-        torch.backends.cudnn.benchmark = True
-    else:
-        device = torch.device('cpu')
-    return device
-
-# Path sanitization
 def sanitize_path(path):
-    """Sanitize file path to prevent path traversal attacks"""
     path = os.path.normpath(path)
     base_dir = os.path.abspath(os.path.dirname(__file__))
     abs_path = os.path.abspath(path)
@@ -79,13 +40,11 @@ def sanitize_path(path):
         raise ValueError("Path traversal attempt detected")
     return path
 
-# Caching
 @lru_cache(maxsize=128)
 def load_stopwords():
     return set(STOPWORDS)
 
 class ChunkProcessor:
-    """Process large files in chunks"""
     CHUNK_SIZE = 1024 * 1024  # 1MB chunks
     
     @staticmethod
@@ -110,7 +69,7 @@ class StartupThread(QThread):
             import matplotlib.pyplot as plt
             from matplotlib.font_manager import FontProperties
         except Exception as e:
-            print(f"StartupThread error: {e}")
+            QMessageBox.warning(None, "Error", f"StartupThread error: {e}")
 
 class FileLoaderThread(QThread):
     file_loaded = Signal(str, str)
@@ -164,7 +123,6 @@ class FileLoaderThread(QThread):
             self.file_loaded.emit(self.file_path, text_data)
 
         except Exception as e:
-            print(f"Error loading file {os.path.basename(self.file_path)}: {e}")
             self.file_error.emit(f"Error loading {os.path.basename(self.file_path)}: {str(e)}")
 
     def extract_text_from_pdf(self, pdf_path):
@@ -256,11 +214,19 @@ class CustomFileLoaderThread(QThread):
 
             elif self.file_type == "model":
                 from flair.models import TextClassifier
-                model = TextClassifier.load(self.file_path)
-                self.file_loaded.emit(model, True)
+                from flair.data import Sentence  # Tambahkan import ini
+                try:
+                    model = TextClassifier.load(self.file_path)
+                    # Verifikasi model adalah sentiment classifier
+                    test = Sentence("test")
+                    model.predict(test)
+                    if not test.labels or test.labels[0].value not in ['POSITIVE', 'NEGATIVE', 'NEUTRAL']:
+                        raise ValueError("Model is not a valid sentiment classifier")
+                    self.file_loaded.emit(model, True)
+                except Exception as e:
+                    self.file_loaded.emit(f"Invalid sentiment model: {str(e)}", False)
 
         except Exception as e:
-            print(f"CustomFileLoaderThread error: {e}")
             self.file_loaded.emit(str(e), False)
 
 class CustomVaderSentimentIntensityAnalyzer:
@@ -282,7 +248,7 @@ class CustomVaderSentimentIntensityAnalyzer:
                         except ValueError:
                             pass
         except Exception as e:
-            print(f"Failed to load custom lexicon: {e}")
+            QMessageBox.warning(None, "Warning", f"Failed to load custom lexicon: {e}")
 
     def polarity_scores(self, text):
         return self.analyzer.polarity_scores(text)
@@ -308,15 +274,14 @@ class CustomTextBlobSentimentAnalyzer:
                             try:
                                 self.intensifiers[word] = float(measure.split(":")[1])
                             except ValueError:
-                                print(f"Invalid intensifier value in lexicon: {line.strip()}")
+                                continue
                         else:
                             try:
                                 self.lexicon[word] = float(measure)
                             except ValueError:
-                                print(f"Invalid sentiment value in lexicon: {line.strip()}")
-            print(f"Custom lexicon loaded successfully from {custom_lexicon_file}")
+                                continue
         except Exception as e:
-            print(f"Failed to load custom lexicon: {e}")
+            QMessageBox.warning(None, "Warning", f"Failed to load custom lexicon: {e}")
 
     def analyze(self, text):
         from textblob import TextBlob
@@ -363,7 +328,6 @@ class SentimentAnalysisThread(QThread):
             translated = GoogleTranslator(source="auto", target="en").translate(text)
             return translated
         except Exception as e:
-            print(f"Translation error: {e}")
             return None
 
     def translate_text(self, text):
@@ -383,13 +347,12 @@ class SentimentAnalysisThread(QThread):
                     if result:
                         translated.append(result)
                 except Exception as e:
-                    print(f"Failed to translate sentence: {e}")
+                    continue
             return ". ".join(translated)
 
         try:
             return loop.run_until_complete(run_translations())
         except Exception as e:
-            print(f"Translation failed: {e}")
             return None
         finally:
             if loop.is_running():
@@ -515,10 +478,49 @@ class SentimentAnalysisThread(QThread):
                     "neutral_score": neutral_score,
                 })
 
+            elif self.sentiment_mode == "Flair (Custom Model)":
+                try:
+                    from flair.data import Sentence
+                    sentence = Sentence(text_to_analyze)
+                    
+                    if self.flair_classifier_cuslang is None:
+                        raise ValueError("Custom model not loaded")
+                        
+                    self.flair_classifier_cuslang.predict(sentence)
+                    if not sentence.labels:
+                        raise ValueError("Model produced no labels")
+                        
+                    sentiment = sentence.labels[0]
+                    confidence = sentiment.score
+                    sentiment_label = sentiment.value
+
+                    if sentiment_label not in ['POSITIVE', 'NEGATIVE', 'NEUTRAL']:
+                        raise ValueError(f"Invalid label: {sentiment_label}")
+
+                    if confidence < 0.55:
+                        sentiment_label = "NEUTRAL"
+                        positive_score = negative_score = 0.0
+                        neutral_score = 1.0
+                    else:
+                        positive_score = confidence if sentiment_label == "POSITIVE" else 0
+                        negative_score = confidence if sentiment_label == "NEGATIVE" else 0
+                        neutral_score = 1.0 if sentiment_label == "NEUTRAL" else 0
+
+                    result.update({
+                        "compound_score": confidence,
+                        "sentiment_label": sentiment_label,
+                        "positive_score": positive_score,
+                        "negative_score": negative_score, 
+                        "neutral_score": neutral_score,
+                    })
+                except ImportError as e:
+                    result["sentiment_label"] = "Error: Flair not installed properly"
+                except Exception as e:
+                    result["sentiment_label"] = f"Error: {str(e)}"
+
             self.sentiment_analyzed.emit(result)
 
         except Exception as e:
-            print(f"Sentiment analysis error: {e}")
             result["sentiment_label"] = f"Error: {str(e)}"
             self.sentiment_analyzed.emit(result)
 
@@ -545,24 +547,11 @@ class FlairModelLoaderThread(QThread):
                 model = FlairModelLoaderThread._cached_model
             self.model_loaded.emit(model)
         except Exception as e:
-            print(f"Flair model loading error: {e}")
             self.error_occurred.emit(str(e))
 
 class WordCloudGenerator(QMainWindow):
     def __init__(self):
         super().__init__()
-        # # Validate dependencies
-        # missing_deps = validate_dependencies()
-        # if missing_deps:
-        #     QMessageBox.critical(
-        #         self,
-        #         "Missing Dependencies",
-        #         f"Please install required packages: {', '.join(missing_deps)}"
-        #     )
-        #     sys.exit(1)
-
-        # # Initialize GPU if available
-        # self.device = setup_gpu()
         
         # Initialize components
         self.thread_pool = QThreadPool()
@@ -611,7 +600,7 @@ class WordCloudGenerator(QMainWindow):
     def initUI(self):
         self.setWindowTitle("WCGen + Sentiment Analysis (v1.5)")
         self.setFixedSize(550, 750)
-        self.setWindowIcon(QIcon("D:/python_proj/wcloudgui/res/gs.ico"))
+        self.setWindowIcon(QIcon(str(ICON_PATH)))
 
         layout = QGridLayout()
 
@@ -1049,10 +1038,8 @@ class WordCloudGenerator(QMainWindow):
                     stopped_threads.append(thread)
                     
             except RuntimeError as e:
-                print(f"Error stopping thread {thread}: {str(e)}")
                 failed_to_stop.append(thread)
             except Exception as e:
-                print(f"Critical error during thread termination: {str(e)}")
                 failed_to_stop.append(thread)
 
         self.threads_mutex.lock()
@@ -1109,14 +1096,13 @@ class WordCloudGenerator(QMainWindow):
         self.thread_pool.clear()
         if torch.cuda.is_available():
             torch.cuda.empty_cache()
-        logging.shutdown()
 
         if self.current_figure:
             try:
                 plt.close(self.current_figure)
                 self.current_figure = None
-            except Exception as e:
-                print(f"Error closing figure: {e}")
+            except Exception:
+                pass
 
         self.threads_mutex.lock()
         remaining_threads = self.active_threads.copy()
@@ -1134,7 +1120,7 @@ class WordCloudGenerator(QMainWindow):
                         thread.terminate()
                         thread.wait(TERMINATION_TIMEOUT)
             except Exception as e:
-                print(f"Error terminating thread {thread}: {str(e)}")
+                pass
 
         for widget in QApplication.topLevelWidgets():
             if widget is not self:
@@ -1142,7 +1128,7 @@ class WordCloudGenerator(QMainWindow):
                     widget.close()
                     widget.deleteLater()
                 except Exception as e:
-                    print(f"Error closing widget: {str(e)}")
+                    pass
 
         try:
             if self.flair_classifier:
@@ -1152,37 +1138,12 @@ class WordCloudGenerator(QMainWindow):
             if self.textblob_analyzer:
                 del self.textblob_analyzer
         except Exception as e:
-            print(f"Error cleaning models: {str(e)}")
+            pass
 
         QApplication.processEvents()
-        
-        print("Application closed gracefully")
 
     def show_about(self):
-        about_text = """
-        <h2>🌟 WCGen - Word Cloud Generator + Sentiment Analysis</h2>
-        <p><b>Version:</b> 1.5</p>
-        <p>&copy; 2025 M. Adib Zata Ilmam</p>
-        <p><a href="https://github.com/zatailm/wcloudgui">📌 GitHub Repository</a></p>
-        <h3>🔍 What is WCGen?</h3>
-        <p>WCGen is an advanced yet easy-to-use application designed for creating visually appealing word clouds from text data.</p>
-        <h3>🚀 Key Features</h3>
-        <ul>
-            <li><b>Supports multiple file formats:</b> TXT, PDF, DOC/DOCX, CSV, XLSX</li>
-            <li><b>Fully customizable word clouds:</b> Choose colors, fonts, shapes, and themes</li>
-            <li><b>Stopword filtering:</b> Remove common words for clearer insights</li>
-            <li><b>Smart text processing:</b> Handles large datasets efficiently</li>
-            <li><b>Export & save options:</b> High-resolution image saving in multiple formats</li>
-            <li><b>Sentiment analysis:</b> Optional analysis using TextBlob, VADER, and Flair</li>
-        </ul>
-        <h3>📖 How WCGen Helps You</h3>
-        <p>Whether you’re analyzing customer feedback, conducting academic research, or visualizing text-based insights, WCGen simplifies the process and enhances your workflow with its intuitive design and powerful features.</p>
-        <h3>📜 License</h3>
-        <p>WCGen is free for personal and educational use. For commercial applications, please refer to the licensing terms.</p>
-        <h3>📚 How to Cite WCGen</h3>
-        <p>If you use WCGen in your research or publication, please cite it as follows (APA 7):</p>
-        <p>Ilmam, M. A. Z. (2025). <i>WCGen - Word Cloud Generator + Sentiment Analysis</i> (Version 1.5) [Software]. Zenodo. <a href="https://doi.org/10.5281/zenodo.15034843">https://doi.org/10.5281/zenodo.14932650</a></p>
-        """
+        about_text = base64.b64decode(ABOUT_TEXT.encode()).decode()
 
         dialog = QDialog(self)
         dialog.setWindowModality(Qt.NonModal)
@@ -1748,24 +1709,40 @@ class WordCloudGenerator(QMainWindow):
         if success:
             try:
                 from flair.models import TextClassifier
-                from flair.data import Sentence
-
+                from flair.data import Sentence  # Tambahkan import ini
+                
                 if not isinstance(result, TextClassifier):
                     QMessageBox.critical(self, "Error", "Invalid model type. Please load a valid Flair TextClassifier model.")
                     return
 
+                # Test model dengan data dummy
                 test_sentence = Sentence("This is a test sentence")
                 result.predict(test_sentence)
+                
+                # Verifikasi label output 
                 if not test_sentence.labels:
                     raise ValueError("Model didn't produce any labels")
+                    
+                # Verifikasi label sesuai format sentiment (POSITIVE/NEGATIVE)
+                label = test_sentence.labels[0].value
+                if label not in ['POSITIVE', 'NEGATIVE', 'NEUTRAL']:
+                    raise ValueError(f"Model produces incompatible labels: {label}. Expected: POSITIVE/NEGATIVE/NEUTRAL")
 
                 self.flair_classifier_cuslang = result
                 QMessageBox.information(self, "Success", "Custom model loaded successfully! Flair will now use this model.")
 
             except Exception as e:
-                QMessageBox.critical(self, "Model Test Failed", f"Model validation failed: {str(e)}\nPlease ensure this is a valid sentiment analysis model.")
+                QMessageBox.critical(self, "Model Test Failed", 
+                    f"Model validation failed: {str(e)}\n\n"
+                    "Please ensure this is a valid sentiment analysis model that produces POSITIVE/NEGATIVE/NEUTRAL labels.\n"
+                    "BERT models may need to be fine-tuned specifically for sentiment analysis tasks."
+                )
+                self.flair_classifier_cuslang = None
         else:
             QMessageBox.critical(self, "Error", f"Failed to load custom model: {result}")
+            self.flair_classifier_cuslang = None
+        
+        self.change_sentiment_mode(self.sentiment_mode)
 
     def cleanup_flair_thread(self):
         self.threads_mutex.lock()
@@ -1775,6 +1752,8 @@ class WordCloudGenerator(QMainWindow):
         QTimer.singleShot(100, lambda: setattr(self, "flair_loader_thread", None))
 
     def show_sentiment_mode_info(self):
+        mode_info = base64.b64decode(MODE_INFO.encode()).decode()
+
         dialog = QDialog(self)
         dialog.setWindowModality(Qt.NonModal)
         dialog.setWindowTitle("Sentiment Analysis Modes")
@@ -1782,35 +1761,7 @@ class WordCloudGenerator(QMainWindow):
         dialog.setSizeGripEnabled(True)
 
         layout = QVBoxLayout()
-
         text_browser = QTextBrowser()
-
-        mode_info = """
-        <h2>Sentiment Analysis Modes</h2>
-        <p>Select the most suitable sentiment analysis method based on your text type and analysis needs.</p>
-        <h3>📝 TextBlob</h3>
-        <p><b>Best for:</b> Formal texts, well-structured documents, news articles, research papers, and reports.</p>
-        <p>TextBlob is a lexicon-based sentiment analysis tool that provides a simple yet effective approach for evaluating the sentiment of structured text. It assigns a polarity score (positive, negative, or neutral) and can also analyze subjectivity levels.</p>
-        <h3>💬 VADER (Valence Aware Dictionary and sEntiment Reasoner)</h3>
-        <p><b>Best for:</b> Social media posts, tweets, short comments, chat messages, and informal reviews.</p>
-        <p>VADER is specifically designed for analyzing short, informal texts that often contain slang, emojis, and punctuation-based emotions. It is a rule-based sentiment analysis model that efficiently determines sentiment intensity and works exceptionally well for real-time applications.</p>
-        <h3>🔬 Flair</h3>
-        <p><b>Best for:</b> Long-form content, product reviews, professional documents, and AI-based deep sentiment analysis.</p>
-        <p>Flair utilizes deep learning techniques for sentiment analysis, making it highly accurate for complex texts. It is ideal for analyzing large-scale textual data, capturing context more effectively than traditional rule-based models. However, it requires more computational resources compared to TextBlob and VADER.</p>
-        <h3>🌐 Important Note for Language Support</h3>
-        <p>While this application supports non-English text through automatic translation, it is <b>highly recommended</b> to use <b>manually translated and refined English text</b> for the most accurate sentiment analysis. The built-in automatic translation feature may not always function correctly, leading to potential misinterpretations or inaccurate sentiment results.</p>
-        <p>For the best performance, ensure that non-English text is properly reviewed and adjusted before sentiment analysis. 🚀</p>
-        <h3>📌 Custom Lexicon Format Example</h3>
-        <p>Below is an example of a custom lexicon format for sentiment analysis:</p>
-        <pre style='background-color:#f4f4f4; padding:10px; border-radius:5px;'>
-        excellent   1.5
-        awful      -1.5
-        not        negation         # Mark as negation word
-        intensely  intensifier:1.7  # Custom intensifier with multiplier
-        </pre>
-        <p>This custom lexicon allows fine-tuning of sentiment scores by adding custom words, negations, and intensifiers to improve sentiment analysis accuracy.</p>
-        """
-
         text_browser.setHtml(mode_info)
         text_browser.setOpenExternalLinks(True)
         text_browser.setReadOnly(True)

@@ -9,3 +9,7 @@ build/
 /src/testing.py
 /src/popo.py
 .vscode/
+/bak
+bak/
+dlls/
+utils/

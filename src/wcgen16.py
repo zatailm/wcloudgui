@@ -5,9 +5,22 @@ from pathlib import Path
 from functools import lru_cache, cached_property
 from contextlib import contextmanager
 import torch
+import psutil
 os.environ["QT_API"] = "pyside6"
 
 from wordcloud import WordCloud, STOPWORDS
+
+"""
+WCGen - Advanced Word Cloud Generator with Text Analytics
+Provides word cloud generation, sentiment analysis, and topic modeling capabilities
+with an intuitive GUI interface.
+
+Main components:
+- Word cloud generation with customizable options
+- Multi-mode sentiment analysis (TextBlob, VADER, Flair) 
+- Topic modeling and keyword extraction
+- File handling for multiple formats
+"""
 
 class LazyLoader:
     """Optimized lazy loading for heavy dependencies"""
@@ -116,7 +129,7 @@ from PySide6.QtWidgets import (
     QTextEdit, QProgressBar, QFrame, QColorDialog, QInputDialog, QTextBrowser,
     QHBoxLayout, QGroupBox
 )
-from PySide6.QtCore import QThread, Signal, Qt, QTimer, QMutex, QThreadPool
+from PySide6.QtCore import QThread, Signal, Qt, QTimer, QMutex, QThreadPool, QObject
 from PySide6.QtGui import QIcon, QGuiApplication
 import matplotlib
 matplotlib.use("QtAgg")
@@ -182,6 +195,58 @@ class ChunkProcessor:
                 progress = (processed / total_size) * 100
                 yield progress
 
+    @staticmethod
+    def process_file_chunks_mp(file_path, chunk_processor, max_workers=None):
+        if max_workers is None:
+            max_workers = mp.cpu_count()
+            
+        def process_chunk(chunk):
+            return chunk_processor(chunk)
+            
+        chunks = []
+        total_size = os.path.getsize(file_path)
+        processed = 0
+        
+        with open(file_path, 'r', encoding='utf-8') as f:
+            while True:
+                chunk = f.read(ChunkProcessor.CHUNK_SIZE)
+                if not chunk:
+                    break
+                chunks.append(chunk)
+                processed += len(chunk)
+                yield (processed / total_size) * 100
+                
+        with ProcessPoolExecutor(max_workers=max_workers) as executor:
+            results = list(executor.map(process_chunk, chunks))
+            
+        return ''.join(results)
+
+    @staticmethod
+    async def process_file_chunks_async(file_path, chunk_processor):
+        """Async chunks processor that yields progress and final result"""
+        chunks = []
+        total_size = os.path.getsize(file_path)
+        processed = 0
+        
+        async with aiofiles.open(file_path, 'r', encoding='utf-8') as f:
+            while True:
+                chunk = await f.read(ChunkProcessor.CHUNK_SIZE)
+                if not chunk:
+                    break
+                chunks.append(chunk)
+                processed += len(chunk)
+                yield (processed / total_size) * 100
+                
+        loop = asyncio.get_event_loop()
+        with ThreadPoolExecutor() as pool:
+            tasks = [
+                loop.run_in_executor(pool, chunk_processor, chunk)
+                for chunk in chunks
+            ]
+            results = await asyncio.gather(*tasks)
+            
+        yield ''.join(results)
+
 def get_font_properties():
     font_manager = importlib.import_module("matplotlib.font_manager")
     return font_manager.FontProperties
@@ -208,6 +273,40 @@ class FileLoaderThread(QThread):
 
             if not os.path.exists(self.file_path):
                 raise FileNotFoundError(f"File not found: {self.file_path}")
+
+            file_size = os.path.getsize(self.file_path)
+            if file_size > 100 * 1024 * 1024:
+                self.process_large_file()
+            else:
+                self.process_normal_file()
+
+        except Exception as e:
+            self.file_error.emit(f"Error loading {os.path.basename(self.file_path)}: {str(e)}")
+
+    def process_large_file(self):
+        chunk_processor = ChunkProcessor()
+        
+        def process_chunk(chunk):
+            return chunk.strip() + '\n'
+            
+        try:
+            text_data = ''
+            for progress in chunk_processor.process_file_chunks_mp(
+                self.file_path, process_chunk):
+                self.progress.emit(progress)
+                
+            if not text_data.strip():
+                raise ValueError("File is empty or contains no extractable text")
+                
+            self.file_loaded.emit(self.file_path, text_data)
+            
+        except Exception as e:
+            self.file_error.emit(f"Error processing large file: {str(e)}")
+
+    def process_normal_file(self):
+        try:
+            if self.isInterruptionRequested():
+                return
 
             text_data = ""
             
@@ -274,14 +373,12 @@ class FileLoaderThread(QThread):
                 raise ValueError("Word document contains no readable text")
             
             text = ""
-            # Iterate melalui semua paragraf dan tabel
             for p in doc.paragraphs:
                 if self.isInterruptionRequested():
                     return ""
                 if p.text.strip():
                     text += p.text.strip() + "\n"
                     
-            # Tambahkan ekstraksi teks dari tabel jika ada
             for table in doc.tables:
                 if self.isInterruptionRequested():
                     return ""
@@ -290,11 +387,9 @@ class FileLoaderThread(QThread):
                         if cell.text.strip():
                             text += cell.text.strip() + "\n"
                             
-            # Pastikan teks tidak kosong
             if not text.strip():
                 raise ValueError("No readable text found in document")
                 
-            # Normalisasi whitespace dan newlines
             text = re.sub(r'\s+', ' ', text)
             text = text.replace('\n\n', '\n').strip()
             
@@ -333,6 +428,92 @@ class FileLoaderThread(QThread):
             return df.to_string(index=False, header=True)
         except Exception as e:
             raise RuntimeError(f"CSV processing failed: {str(e)}") from e
+
+class MPWordCloud(WordCloud):
+    """Thread-enabled WordCloud for large texts"""
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        self.generator_thread = None
+        
+    @staticmethod
+    def _process_chunk(chunk, stopwords=None):
+        """Static method to process text chunks with stopwords support"""
+        temp_wc = WordCloud(stopwords=stopwords)
+        return temp_wc.process_text(chunk)
+
+    def generate_threaded(self, text, progress_callback=None, finished_callback=None, error_callback=None):
+        """Generate word cloud using threading"""
+        wc_params = {
+            'width': self.width,
+            'height': self.height,
+            'background_color': self.background_color,
+            'mask': self.mask,
+            'max_words': self.max_words,
+            'min_font_size': self.min_font_size,
+            'font_path': self.font_path,
+            'colormap': self.colormap,
+            'stopwords': self.stopwords,
+        }
+        
+        self.generator_thread = WordCloudGeneratorThread(text, wc_params)
+        
+        if progress_callback:
+            self.generator_thread.progress.connect(progress_callback)
+        if finished_callback:    
+            self.generator_thread.finished.connect(finished_callback)
+        if error_callback:
+            self.generator_thread.error.connect(error_callback)
+            
+        self.generator_thread.start()
+        return self
+
+class WordCloudGeneratorThread(QThread):
+    """Thread for generating word clouds"""
+    progress = Signal(int)
+    finished = Signal(object)
+    error = Signal(str)
+
+    def __init__(self, text, wc_params):
+        super().__init__()
+        self.text = text
+        self.wc_params = wc_params
+        self._cancelled = False
+
+    def run(self):
+        try:
+            if len(self.text) > 100000:
+                chunk_size = 10000
+                chunks = [self.text[i:i+chunk_size] 
+                         for i in range(0, len(self.text), chunk_size)]
+                frequencies = {}
+                
+                for i, chunk in enumerate(chunks):
+                    if self._cancelled:
+                        return
+                        
+                    chunk_freqs = MPWordCloud._process_chunk(chunk, self.wc_params.get('stopwords'))
+                    
+                    for word, freq in chunk_freqs.items():
+                        frequencies[word] = frequencies.get(word, 0) + freq
+                        
+                    progress = int((i + 1) / len(chunks) * 100)
+                    self.progress.emit(progress)
+                    
+                wordcloud = WordCloud(**self.wc_params)
+                wordcloud.generate_from_frequencies(frequencies)
+            else:
+                wordcloud = WordCloud(**self.wc_params)
+                wordcloud.generate(self.text)
+                self.progress.emit(100)
+                
+            self.finished.emit(wordcloud)
+            
+        except Exception as e:
+            self.error.emit(str(e))
+
+    def cancel(self):
+        self._cancelled = True
+        self.requestInterruption()
 
 class CustomFileLoaderThread(QThread):
     file_loaded = Signal(object, bool)
@@ -467,11 +648,9 @@ class SentimentAnalysisThread(QThread):
         self.cached_translation = None
         self.temp_dir = Path(tempfile.gettempdir()) / "wcgen_cache"
         
-        # Buat hash dari text untuk filename
         self.text_hash = hashlib.md5(text_data.encode()).hexdigest()
         self.temp_file = self.temp_dir / f"trans_{self.text_hash}.txt"
         
-        # Buat directory jika belum ada
         self.temp_dir.mkdir(parents=True, exist_ok=True)
 
     async def _async_translate(self, text):
@@ -553,7 +732,7 @@ class SentimentAnalysisThread(QThread):
             with open(self.temp_file, "w", encoding="utf-8") as f:
                 f.write(translated_text)
         except:
-            pass # Ignore write errors
+            pass
 
     def run(self):
         result = {
@@ -582,7 +761,6 @@ class SentimentAnalysisThread(QThread):
                     self.offline_warning.emit("Translation required but no internet connection")
                     return
 
-                # Check cache first
                 cached = self.get_cached_translation()
                 if cached:
                     text_to_analyze = cached
@@ -592,7 +770,6 @@ class SentimentAnalysisThread(QThread):
                         self.translation_failed.emit("Translation failed - analysis aborted")
                         return
                         
-                    # Save to cache
                     self.save_translation(translated_text)
                     text_to_analyze = translated_text
 
@@ -848,7 +1025,6 @@ class ImportThread(QThread):
     
     def __init__(self):
         super().__init__()
-        # Flag untuk mengontrol thread
         self._is_running = True
         
     def run(self):
@@ -1012,15 +1188,11 @@ class TopicAnalysisTab(QWidget):
             method = self.topic_method.currentText()
             num_topics = self.num_topics.value()
             
-            # Disable buttons during analysis
-            self.analyze_topics_btn.setEnabled(False)
-            self.extract_keywords_btn.setEnabled(False)
+            self.parent_widget.button_manager.disable_other_buttons('analyze_topics_btn')
             
-            # Show progress bar
             if self.parent_widget:
                 self.parent_widget.set_progress('topics')
             
-            # Create and start thread
             self.topic_thread = TopicAnalysisThread(self.text, num_topics, method.lower())
             self.topic_thread.setParent(self.parent_widget)
             self.topic_thread.finished.connect(self.on_topic_analysis_complete)
@@ -1029,7 +1201,7 @@ class TopicAnalysisTab(QWidget):
             
         except Exception as e:
             QMessageBox.critical(self, "Error", f"Topic analysis failed: {str(e)}")
-            self.enable_buttons()
+            self.parent_widget.button_manager.restore_states()
             if self.parent_widget:
                 self.parent_widget.set_progress('topics', False)
             
@@ -1046,15 +1218,11 @@ class TopicAnalysisTab(QWidget):
             method = self.keyword_method.currentText().lower().replace('-', '')
             num_keywords = self.num_keywords.value()
             
-            # Disable buttons during extraction
-            self.analyze_topics_btn.setEnabled(False)
-            self.extract_keywords_btn.setEnabled(False)
+            self.parent_widget.button_manager.disable_other_buttons('extract_keywords_btn')
             
-            # Show progress bar
             if self.parent_widget:
                 self.parent_widget.set_progress('keywords')
             
-            # Create and start thread
             self.keyword_thread = KeywordExtractionThread(self.text, method, num_keywords)
             self.keyword_thread.setParent(self.parent_widget)
             self.keyword_thread.finished.connect(self.on_keyword_extraction_complete)
@@ -1063,33 +1231,28 @@ class TopicAnalysisTab(QWidget):
             
         except Exception as e:
             QMessageBox.critical(self, "Error", f"Keyword extraction failed: {str(e)}")
-            self.enable_buttons()
+            self.parent_widget.button_manager.restore_states()
             if self.parent_widget:
                 self.parent_widget.set_progress('keywords', False)
 
     def on_topic_analysis_complete(self, topics):
         if self.parent_widget:
             self.parent_widget.set_progress('topics', False)
-        self.enable_buttons()
+        self.parent_widget.button_manager.restore_states()
         self.show_results_dialog("Topic Analysis", topics)
 
     def on_keyword_extraction_complete(self, keywords):
         if self.parent_widget:
             self.parent_widget.set_progress('keywords', False)
-        self.enable_buttons()
+        self.parent_widget.button_manager.restore_states()
         self.show_keyword_dialog(self.keyword_method.currentText(), keywords)
 
     def on_analysis_error(self, error_msg):
         if self.parent_widget:
             self.parent_widget.set_progress('topics', False)
             self.parent_widget.set_progress('keywords', False)
-        self.enable_buttons()
+        self.parent_widget.button_manager.restore_states()
         QMessageBox.critical(self, "Error", error_msg)
-
-    def enable_buttons(self):
-        """Re-enable buttons after processing"""
-        self.analyze_topics_btn.setEnabled(True)
-        self.extract_keywords_btn.setEnabled(True)
 
     def show_results_dialog(self, method, topics):
         result_html = "<h3>Topic Analysis Results</h3>"
@@ -1130,15 +1293,97 @@ class TopicAnalysisTab(QWidget):
         dialog.setWindowModality(Qt.NonModal)
         dialog.show()
 
-class WordCloudGenerator(QMainWindow):
+class WarningEmitter(QObject):
+    token_warning = Signal(str)
+
+class CustomWarningHandler:
+    def __init__(self, emitter):
+        self.emitter = emitter
+        self.reported_tokens = set()
+
+    def handle_warning(self, message, category, filename, lineno, file=None, line=None):
+        if "Your stop_words may be inconsistent" in str(message):
+            tokens = self._extract_tokens(str(message))
+            if tokens:
+                self.emitter.token_warning.emit(", ".join(tokens))
+                self.reported_tokens.update(tokens)
+
+    def _extract_tokens(self, message):
+        start = message.find('[') + 1
+        end = message.find(']')
+        if start > 0 and end > start:
+            return [token.strip("'") for token in message[start:end].split(', ')]
+        return []
+
+class PerformanceMonitor:
+    """Monitor system resources and performance"""
+    
+    @staticmethod
+    def check_resources():
+        """Check available system resources"""
+        try:
+            mem = psutil.virtual_memory()
+            mem_available = mem.available / 1024 / 1024
+            cpu_available = 100 - psutil.cpu_percent()
+            return mem_available, cpu_available
+        except Exception as e:
+            print(f"Resource check error: {e}")
+            return 1000, 50
+
+class ButtonStateManager:
+    """Manages button states during processing operations"""
+    def __init__(self, main_window):
+        self.main_window = main_window
+        self.button_states = {}
+        self.process_buttons = [
+            'generate_wordcloud_button',
+            'sentiment_button',
+            'analyze_topics_btn',
+            'extract_keywords_btn',
+            'view_fulltext_button',
+            'text_stats_button',
+            'save_wc_button'
+        ]
+        
+    def save_states(self):
+        """Save current state of all process buttons"""
+        for btn_name in self.process_buttons:
+            if hasattr(self.main_window, btn_name):
+                btn = getattr(self.main_window, btn_name)
+                self.button_states[btn_name] = btn.isEnabled()
+            elif hasattr(self.main_window.topic_tab, btn_name):
+                btn = getattr(self.main_window.topic_tab, btn_name)
+                self.button_states[btn_name] = btn.isEnabled()
+                
+    def disable_other_buttons(self, active_button):
+        """Disable all process buttons except the active one"""
+        self.save_states()
+        for btn_name in self.process_buttons:
+            if btn_name != active_button:
+                if hasattr(self.main_window, btn_name):
+                    getattr(self.main_window, btn_name).setEnabled(False)
+                elif hasattr(self.main_window.topic_tab, btn_name):
+                    getattr(self.main_window.topic_tab, btn_name).setEnabled(False)
+                    
+    def restore_states(self):
+        """Restore buttons to their previous states"""
+        for btn_name, was_enabled in self.button_states.items():
+            if hasattr(self.main_window, btn_name):
+                getattr(self.main_window, btn_name).setEnabled(was_enabled)
+            elif hasattr(self.main_window.topic_tab, btn_name):
+                getattr(self.main_window.topic_tab, btn_name).setEnabled(was_enabled)
+        self.button_states.clear()
+
+class MainClass(QMainWindow):
     def __init__(self):
         super().__init__()
+        
+        self.perf_monitor = PerformanceMonitor()
         
         self.active_threads = ThreadSafeSet()
         self.resource_manager = ResourceManager()
         self.lazy_loader = LazyLoader()
         
-        # Topic analysis components
         self.vectorizer = CountVectorizer(max_features=1000, stop_words='english')
         self.tfidf = TfidfVectorizer(max_features=1000, stop_words='english')
         self.lda_model = None
@@ -1176,16 +1421,25 @@ class WordCloudGenerator(QMainWindow):
         self.init_analyzers()
         
         self.progress_states = {
-            'wordcloud': {'color': 'red', 'text': 'Generating word cloud'},
+            'keywords': {'color': 'red', 'text': 'Extracting keywords'},
             'file': {'color': 'blue', 'text': 'Loading file'},
             'topics': {'color': 'yellow', 'text': 'Analyzing topics'},
             'model': {'color': 'green', 'text': 'Loading model'},
-            'keywords': {'color': 'purple', 'text': 'Extracting keywords'}
+            'wordcloud': {'color': 'purple', 'text': 'Generating word cloud'}
         }
         
         self.initUI()
         self.setup_timers()
         self._init_imports()
+
+        self.warning_emitter = WarningEmitter()
+        self.warning_handler = CustomWarningHandler(self.warning_emitter)
+        self.warning_emitter.token_warning.connect(self.show_token_warning)
+
+        import warnings
+        warnings.showwarning = self.warning_handler.handle_warning        
+
+        self.button_manager = ButtonStateManager(self)
 
     @cached_property 
     def token_opts(self):
@@ -1240,7 +1494,7 @@ class WordCloudGenerator(QMainWindow):
         """Cleanup import thread when finished"""
         if self.import_thread:
             try:
-                self.import_thread.stop()  # Hentikan thread dengan aman
+                self.import_thread.stop()
                 self.remove_managed_thread(self.import_thread)
                 self.import_thread.deleteLater()
             finally:
@@ -1560,7 +1814,7 @@ class WordCloudGenerator(QMainWindow):
         wordcloud_layout.addWidget(self.text_stats_button, 9, 0, 1, 3)
 
         self.save_wc_button = QPushButton("Save Word Cloud", self)
-        self.save_wc_button.clicked.connect(self.simpan_wordcloud)
+        self.save_wc_button.clicked.connect(self.save_wordcloud)
         self.save_wc_button.setEnabled(False)
         wordcloud_layout.addWidget(self.save_wc_button, 9, 3, 1, 3)
 
@@ -1686,6 +1940,7 @@ class WordCloudGenerator(QMainWindow):
             QMessageBox.warning(self, "Dependency Error", f"Failed to load color maps: {str(e)}")
 
     def analyze_sentiment(self):
+        """Analyze sentiment with button state management"""
         if not self.text_data:
             QMessageBox.critical(self, "Error", "No text data available for sentiment analysis.\nPlease load a text file first.")
             return
@@ -1707,6 +1962,8 @@ class WordCloudGenerator(QMainWindow):
 
         classifier = self.flair_classifier_cuslang if self.sentiment_mode == "Flair (Custom Model)" else self.flair_classifier
 
+        self.button_manager.disable_other_buttons('sentiment_button')
+
         self.sentiment_thread = SentimentAnalysisThread(
             self.text_data, 
             self.sentiment_mode,
@@ -1725,6 +1982,7 @@ class WordCloudGenerator(QMainWindow):
         self.sentiment_thread.start()
 
     def stop_all_processes(self):
+        """Enhanced process termination including word cloud generation"""
         print("Starting enhanced process termination...")
         self.disable_buttons()
 
@@ -1742,25 +2000,21 @@ class WordCloudGenerator(QMainWindow):
             stopped_threads = []
             failed_to_stop = []
 
-            # Check and stop file loader thread if running
             if hasattr(self, 'file_loader_thread') and self.file_loader_thread:
                 if self.file_loader_thread.isRunning():
                     print("Terminating File Loader thread...")
                     all_threads.append(self.file_loader_thread)
 
-            # Check and stop sentiment analysis thread if running
             if hasattr(self, 'sentiment_thread') and self.sentiment_thread:
                 if self.sentiment_thread.isRunning():
                     print("Terminating Sentiment Analysis thread...")
                     all_threads.append(self.sentiment_thread)
 
-            # Check and stop Flair model loader thread if running
             if hasattr(self, 'flair_loader_thread') and self.flair_loader_thread:
                 if self.flair_loader_thread.isRunning():
                     print("Terminating Flair Model Loader thread...")
                     all_threads.append(self.flair_loader_thread)
 
-            # Check and stop lexicon/model loader threads if running
             if hasattr(self, 'lexicon_loader_thread') and self.lexicon_loader_thread:
                 if self.lexicon_loader_thread.isRunning():
                     print("Terminating Lexicon Loader thread...")
@@ -1771,14 +2025,12 @@ class WordCloudGenerator(QMainWindow):
                     print("Terminating Model Loader thread...")
                     all_threads.append(self.model_loader_thread)
 
-            # Check and stop import initialization thread if running
             if hasattr(self, 'import_thread') and self.import_thread:
                 if self.import_thread.isRunning():
                     print("Terminating Import thread...")
                     self.import_thread.stop()
                     all_threads.append(self.import_thread)
 
-            # Check and stop topic/keyword threads if running
             if hasattr(self, 'topic_tab'):
                 if hasattr(self.topic_tab, 'topic_thread') and self.topic_tab.topic_thread:
                     if self.topic_tab.topic_thread.isRunning():
@@ -1894,7 +2146,7 @@ class WordCloudGenerator(QMainWindow):
             self.custom_lexicon_button.setEnabled(False)
             self.custom_model_button.setEnabled(False)
             
-        QApplication.processEvents()
+        QApplication.processEvents()    
 
     def closeEvent(self, event):
         """Enhanced application shutdown"""
@@ -1914,7 +2166,6 @@ class WordCloudGenerator(QMainWindow):
         print("Initiating application shutdown...")
         
         try:
-            # Hentikan ImportThread terlebih dahulu jika masih ada
             if self.import_thread:
                 self.import_thread.stop()
                 self.import_thread.wait()
@@ -1974,7 +2225,6 @@ class WordCloudGenerator(QMainWindow):
             import matplotlib.pyplot as plt
             plt.close('all')
 
-            # Clear translation cache
             temp_dir = Path(tempfile.gettempdir()) / "wcgen_cache"
             if temp_dir.exists():
                 shutil.rmtree(temp_dir, ignore_errors=True)
@@ -2095,169 +2345,231 @@ class WordCloudGenerator(QMainWindow):
             QMessageBox.critical(self, "Error", "Load text file first!")
             return
 
-        stopwords = self.import_stopwords()
-        words = [word.lower() for word in self.text_data.split() if word.lower() not in stopwords]
-        word_counts = Counter(words)
-        sorted_word_counts = sorted(word_counts.items(), key=lambda item: item[1], reverse=True)
+        self.button_manager.disable_other_buttons('text_stats_button')
+        
+        try:
+            stopwords = self.import_stopwords()
+            words = [word.lower() for word in self.text_data.split() if word.lower() not in stopwords]
+            word_counts = Counter(words)
+            sorted_word_counts = sorted(word_counts.items(), key=lambda item: item[1], reverse=True)
 
-        text_length = len(self.text_data)
-        word_count = len(words)
-        char_count_excl_spaces = len(self.text_data.replace(" ", ""))
-        avg_word_length = char_count_excl_spaces / word_count if word_count > 0 else 0
-        most_frequent_words = [word for word, count in sorted_word_counts[:5]]
+            text_length = len(self.text_data)
+            word_count = len(words)
+            char_count_excl_spaces = len(self.text_data.replace(" ", ""))
+            avg_word_length = char_count_excl_spaces / word_count if word_count > 0 else 0
+            most_frequent_words = [word for word, count in sorted_word_counts[:5]]
 
-        if hasattr(self, "stats_dialog") and self.stats_dialog is not None:
-            self.stats_dialog.close()
+            if hasattr(self, "stats_dialog") and self.stats_dialog is not None:
+                self.stats_dialog.close()
 
-        self.stats_dialog = QDialog(self)
-        self.stats_dialog.setWindowModality(Qt.NonModal)
-        self.stats_dialog.setWindowTitle("Text Analysis Report")
-        self.stats_dialog.setMinimumSize(500, 400)
-        self.stats_dialog.setSizeGripEnabled(True)
+            self.stats_dialog = QDialog(self)
+            self.stats_dialog.setWindowModality(Qt.NonModal)
+            self.stats_dialog.setWindowTitle("Text Analysis Report")
+            self.stats_dialog.setMinimumSize(500, 400)
+            self.stats_dialog.setSizeGripEnabled(True)
 
-        layout = QVBoxLayout()
+            layout = QVBoxLayout()
 
-        text_browser = QTextBrowser()
+            text_browser = QTextBrowser()
 
-        html_content = f"""
-        <h3>Text Analysis Overview</h3>
-        <table border="1" cellspacing="0" cellpadding="2" width="100%">
-            <tr><th align="left">Metric</th><th align="left">Value</th></tr>
-            <tr><td>Text Length</td><td>{text_length} characters</td></tr>
-            <tr><td>Word Count</td><td>{word_count}</td></tr>
-            <tr><td>Character Count (excluding spaces)</td><td>{char_count_excl_spaces}</td></tr>
-            <tr><td>Average Word Length</td><td>{avg_word_length:.2f}</td></tr>
-            <tr><td>Most Frequent Words</td><td>{", ".join(most_frequent_words)}</td></tr>
-        </table>
-        <br>
-        <h3>Word Count</h3>
-        <table border="1" cellspacing="0" cellpadding="2" width="100%">
-            <tr><th align="left">Word</th><th align="left">Count</th></tr>
-        """
-        for word, count in sorted_word_counts:
-            html_content += f"<tr><td>{word}</td><td>{count}</td></tr>"
-        html_content += "</table>"
+            html_content = f"""
+            <h3>Text Analysis Overview</h3>
+            <table border="1" cellspacing="0" cellpadding="2" width="100%">
+                <tr><th align="left">Metric</th><th align="left">Value</th></tr>
+                <tr><td>Text Length</td><td>{text_length} characters</td></tr>
+                <tr><td>Word Count</td><td>{word_count}</td></tr>
+                <tr><td>Character Count (excluding spaces)</td><td>{char_count_excl_spaces}</td></tr>
+                <tr><td>Average Word Length</td><td>{avg_word_length:.2f}</td></tr>
+                <tr><td>Most Frequent Words</td><td>{", ".join(most_frequent_words)}</td></tr>
+            </table>
+            <br>
+            <h3>Word Count</h3>
+            <table border="1" cellspacing="0" cellpadding="2" width="100%">
+                <tr><th align="left">Word</th><th align="left">Count</th></tr>
+            """
+            for word, count in sorted_word_counts:
+                html_content += f"<tr><td>{word}</td><td>{count}</td></tr>"
+            html_content += "</table>"
 
-        text_browser.setHtml(html_content)
-        text_browser.setOpenExternalLinks(True)
-        text_browser.setReadOnly(True)
-        layout.addWidget(text_browser)
+            text_browser.setHtml(html_content)
+            text_browser.setOpenExternalLinks(True)
+            text_browser.setReadOnly(True)
+            layout.addWidget(text_browser)
 
-        close_button = QPushButton("Close")
-        close_button.clicked.connect(self.stats_dialog.accept)
-        layout.addWidget(close_button)
+            close_button = QPushButton("Close")
+            close_button.clicked.connect(self.stats_dialog.accept)
+            layout.addWidget(close_button)
 
-        self.stats_dialog.setLayout(layout)
-        self.stats_dialog.show()
+            self.stats_dialog.setLayout(layout)
+            self.stats_dialog.finished.connect(lambda: self.button_manager.restore_states())
+            self.stats_dialog.show()
+            
+        except Exception as e:
+            QMessageBox.critical(self, "Error", f"Failed to generate text analysis: {e}")
+            self.button_manager.restore_states()
 
     def generate_wordcloud(self):
+        """Generate word cloud with enhanced thread handling"""
         import matplotlib.pyplot as plt
-        from matplotlib.colors import LinearSegmentedColormap
-
+        
         if not self.text_data:
             QMessageBox.critical(self, "Error", "Load text file first!")
             return
-
-        font_path = None
-        selected_font = self.font_choice.currentText()
-        if (selected_font != "Default"):
-            font_path = self.font_map.get(selected_font)
-            if not font_path or not os.path.exists(font_path):
-                QMessageBox.warning(self, "Font Error", f"Font file not found: {font_path}")
-                font_path = None
-                return
-
-        stopwords = self.import_stopwords()
-        mask = None
-        if self.mask_path:
-            try:
-                mask = np.array(Image.open(self.mask_path))
-            except Exception as e:
-                QMessageBox.critical(self, "Error", f"Failed to load mask image: {e}")
-                return
 
         try:
             if self.current_figure:
                 plt.close(self.current_figure)
                 self.current_figure = None
 
-            self.set_progress('wordcloud')
-            QApplication.processEvents()
+            font_path = None
+            selected_font = self.font_choice.currentText()
+            if selected_font != "Default":
+                font_path = self.font_map.get(selected_font)
+                if not font_path or not os.path.exists(font_path):
+                    QMessageBox.warning(self, "Font Error", f"Font file not found: {font_path}")
+                    return
+
+            mask = None
+            if self.mask_path:
+                try:
+                    mask = np.array(Image.open(self.mask_path))
+                except Exception as e:
+                    QMessageBox.critical(self, "Error", f"Failed to load mask image: {e}")
+                    return
 
             colormap = self.color_theme.currentText()
             if (colormap in self.custom_color_palettes):
                 colors = self.custom_color_palettes[colormap]
                 colormap = LinearSegmentedColormap.from_list(colormap, colors)
 
-            wc = WordCloud(
-                width=800, height=400, background_color=self.bg_color.currentText(), stopwords=stopwords,
-                colormap=colormap, max_words=self.max_words_input.value(),
-                min_font_size=self.min_font_size_input.value(), mask=mask, font_path=font_path
-            ).generate(self.text_data)
+            mem_available, cpu_available = self.perf_monitor.check_resources()
+            if mem_available < 500:
+                self.cleanup_cache()
 
+            self.button_manager.disable_other_buttons('generate_wordcloud_button')
+            self.set_progress('wordcloud')
+
+            wc = MPWordCloud(
+                width=800, height=400,
+                background_color=self.bg_color.currentText(),
+                stopwords=self.import_stopwords(),
+                colormap=colormap,
+                max_words=self.max_words_input.value(),
+                min_font_size=self.min_font_size_input.value(),
+                mask=mask,
+                font_path=font_path
+            )
+            
+            wc.generate_threaded(
+                self.text_data,
+                progress_callback=lambda p: self.unified_progress_bar.setValue(p),
+                finished_callback=lambda wc_obj: self.display_wordcloud(wc_obj),
+                error_callback=self.handle_wordcloud_error
+            )
+
+            self.current_wordcloud = wc
+
+        except Exception as e:
+            self.handle_wordcloud_error(str(e))
+
+    def display_wordcloud(self, wordcloud):
+        """Display generated wordcloud"""
+        try:
+            import matplotlib.pyplot as plt
+            
             plt.ion()
             self.current_figure = plt.figure(figsize=(10, 5))
-            plt.imshow(wc, interpolation="bilinear")
+            plt.imshow(wordcloud, interpolation="bilinear")
 
             title_text = self.title_entry.text().strip()
             if title_text:
                 title_font = None
-                if selected_font != "Default" and font_path:
+                if self.font_choice.currentText() != "Default":
                     FontProperties = get_font_properties()
-                    title_font = FontProperties(fname=font_path, size=self.title_font_size.value())
-                plt.title(title_text, loc=self.title_position.currentText().lower(), fontproperties=title_font)
+                    title_font = FontProperties(
+                        fname=self.font_map.get(self.font_choice.currentText()),
+                        size=self.title_font_size.value()
+                    )
+                plt.title(
+                    title_text, 
+                    loc=self.title_position.currentText().lower(),
+                    fontproperties=title_font
+                )
 
             plt.axis("off")
             plt.show(block=False)
+
+            self.save_wc_button.setEnabled(True)
+            
         except Exception as e:
-            if self.current_figure:
-                plt.close(self.current_figure)
-                self.current_figure = None
-            QMessageBox.critical(self, "Error", f"Failed to generate word cloud: {e}")
+            self.handle_wordcloud_error(str(e))
         finally:
+            self.button_manager.restore_states()
             self.set_progress('wordcloud', False)
 
-    def simpan_wordcloud(self):
-        options = QFileDialog.Options()
-        save_path, _ = QFileDialog.getSaveFileName(
-            self, "Save WordCloud", "", "PNG file (*.png);;JPG file (*.jpg)", options=options
-        )
-        if not save_path:
-            return
-
-        stopwords = self.import_stopwords()
-        mask = None
-
-        font_path = None
-        if self.font_choice.currentText() != "Default":
-            from matplotlib import font_manager
-            selected_font = self.font_choice.currentText()
-            font_path = self.font_map.get(selected_font)
-
+    def handle_wordcloud_error(self, error_msg):
+        """Handle word cloud generation errors"""
+        import matplotlib.pyplot as plt
+        
+        if self.current_figure:
             try:
-                font_manager.findfont(self.font_choice.currentText())
-                font_path = self.font_choice.currentText()
+                plt.close(self.current_figure)
             except:
-                QMessageBox.warning(self, "Font Error", "Selected font not found, using default")
+                pass
+            finally:
+                self.current_figure = None
+                
+        QMessageBox.critical(self, "Error", f"Failed to generate word cloud: {error_msg}")
+        self.button_manager.restore_states()
+        self.set_progress('wordcloud', False)
 
-        if self.mask_path:
-            try:
-                mask = np.array(Image.open(self.mask_path))
-            except Exception as e:
-                QMessageBox.critical(self, "Error", f"Failed to load mask image: {e}")
+    def save_wordcloud(self):
+        self.button_manager.disable_other_buttons('save_wc_button')
+        
+        try:
+            options = QFileDialog.Options()
+            save_path, _ = QFileDialog.getSaveFileName(
+                self, "Save WordCloud", "", "PNG file (*.png);;JPG file (*.jpg)", options=options
+            )
+            if not save_path:
+                self.button_manager.restore_states()
                 return
 
-        try:
-            wc = WordCloud(
-                width=800, height=400, background_color=self.bg_color.currentText(), stopwords=stopwords,
-                colormap=self.color_theme.currentText(), max_words=self.max_words_input.value(),
-                min_font_size=self.min_font_size_input.value(), mask=mask,
-                font_path=None if self.font_choice.currentText() == "Default" else self.font_choice.currentText()
-            ).generate(self.text_data)
-            wc.to_file(save_path)
-            QMessageBox.information(self, "Succeed", "Word cloud saved!")
-        except Exception as e:
-            QMessageBox.critical(self, "Error", f"Failed to save word cloud: {e}")
+            stopwords = self.import_stopwords()
+            mask = None
+
+            font_path = None
+            if self.font_choice.currentText() != "Default":
+                from matplotlib import font_manager
+                selected_font = self.font_choice.currentText()
+                font_path = self.font_map.get(selected_font)
+
+                try:
+                    font_manager.findfont(self.font_choice.currentText())
+                    font_path = self.font_choice.currentText()
+                except:
+                    QMessageBox.warning(self, "Font Error", "Selected font not found, using default")
+
+            if self.mask_path:
+                try:
+                    mask = np.array(Image.open(self.mask_path))
+                except Exception as e:
+                    QMessageBox.critical(self, "Error", f"Failed to load mask image: {e}")
+                    return
+
+            try:
+                wc = WordCloud(
+                    width=800, height=400, background_color=self.bg_color.currentText(), stopwords=stopwords,
+                    colormap=self.color_theme.currentText(), max_words=self.max_words_input.value(),
+                    min_font_size=self.min_font_size_input.value(), mask=mask,
+                    font_path=None if self.font_choice.currentText() == "Default" else self.font_choice.currentText()
+                ).generate(self.text_data)
+                wc.to_file(save_path)
+                QMessageBox.information(self, "Succeed", "Word cloud saved!")
+            except Exception as e:
+                QMessageBox.critical(self, "Error", f"Failed to save word cloud: {e}")
+        finally:
+            self.button_manager.restore_states()
 
     def create_custom_palette(self):
         dialog = QDialog(self)
@@ -2305,29 +2617,37 @@ class WordCloudGenerator(QMainWindow):
             QMessageBox.critical(self, "Error", "No text data available to display.")
             return
 
-        if hasattr(self, "text_dialog") and self.text_dialog is not None:
-            self.text_dialog.close()
+        self.button_manager.disable_other_buttons('view_fulltext_button')
+        
+        try:
+            if hasattr(self, "text_dialog") and self.text_dialog is not None:
+                self.text_dialog.close()
 
-        self.text_dialog = QDialog(self)
-        self.text_dialog.setWindowModality(Qt.NonModal)
-        self.text_dialog.setWindowTitle("Full Text")
-        self.text_dialog.setMinimumSize(500, 400)
-        self.text_dialog.setSizeGripEnabled(True)
+            self.text_dialog = QDialog(self)
+            self.text_dialog.setWindowModality(Qt.NonModal)
+            self.text_dialog.setWindowTitle("Full Text")
+            self.text_dialog.setMinimumSize(500, 400)
+            self.text_dialog.setSizeGripEnabled(True)
 
-        layout = QVBoxLayout()
+            layout = QVBoxLayout()
 
-        text_browser = QTextBrowser()
-        text_browser.setPlainText(self.text_data)
-        text_browser.setOpenExternalLinks(True)
-        text_browser.setReadOnly(True)
-        layout.addWidget(text_browser)
+            text_browser = QTextBrowser()
+            text_browser.setPlainText(self.text_data)
+            text_browser.setOpenExternalLinks(True)
+            text_browser.setReadOnly(True)
+            layout.addWidget(text_browser)
 
-        close_button = QPushButton("Close")
-        close_button.clicked.connect(self.text_dialog.accept)
-        layout.addWidget(close_button)
+            close_button = QPushButton("Close")
+            close_button.clicked.connect(self.text_dialog.accept)
+            layout.addWidget(close_button)
 
-        self.text_dialog.setLayout(layout)
-        self.text_dialog.show()
+            self.text_dialog.setLayout(layout)
+            self.text_dialog.finished.connect(lambda: self.button_manager.restore_states())
+            self.text_dialog.show()
+            
+        except Exception as e:
+            QMessageBox.critical(self, "Error", f"Failed to display text: {e}")
+            self.button_manager.restore_states()
 
     def handle_offline_warning(self, msg):
         self.unified_progress_bar.setVisible(False)
@@ -2341,6 +2661,7 @@ class WordCloudGenerator(QMainWindow):
 
     def on_sentiment_analyzed(self, result):
         self.set_progress('model', False)
+        self.button_manager.restore_states()
         dialog = QDialog(self)
         dialog.setWindowTitle(f"Sentiment Analysis Results - {self.sentiment_mode}")
         dialog.setMinimumSize(500, 270)
@@ -2369,10 +2690,9 @@ class WordCloudGenerator(QMainWindow):
 
         if self.sentiment_mode in ["TextBlob", "TextBlob (Custom Lexicon)"]:
             try:
-                subj_value = float(result["subjectivity"])  # Convert ke float jika string
+                subj_value = float(result["subjectivity"])
                 sentiment_result += f'<tr><td>Subjectivity</td><td>{subj_value:.2f}</td></tr>'
             except (ValueError, TypeError):
-                # Jika konversi gagal, tampilkan apa adanya tanpa format float
                 sentiment_result += f'<tr><td>Subjectivity</td><td>{result["subjectivity"]}</td></tr>'
 
         sentiment_result += "</table>"
@@ -2458,36 +2778,57 @@ class WordCloudGenerator(QMainWindow):
             self, "Select Custom Lexicon File", "", "Text Files (*.txt)", options=options
         )
         if lexicon_path:
-            self.set_progress('model')
-            self.custom_lexicon_button.setEnabled(False)
+            try:
+                self.button_manager.disable_other_buttons('custom_lexicon_button')
+                self.custom_lexicon_button.setText("Loading Lexicon...")
+                self.custom_lexicon_button.setEnabled(False)
+                self.sentiment_button.setEnabled(False)
 
-            self.lexicon_loader_thread = CustomFileLoaderThread(
-                lexicon_path, "TextBlob (Custom Lexicon)" if self.sentiment_mode == "TextBlob (Custom Lexicon)" else "lexicon"
-            )
-            self.lexicon_loader_thread.file_loaded.connect(self.on_lexicon_loaded)
+                self.lexicon_loader_thread = CustomFileLoaderThread(
+                    lexicon_path, 
+                    "TextBlob (Custom Lexicon)" if self.sentiment_mode == "TextBlob (Custom Lexicon)" else "lexicon"
+                )
+                self.lexicon_loader_thread.file_loaded.connect(self.on_lexicon_loaded)
+                self.thread_manager.add_thread(self.lexicon_loader_thread)
+                self.lexicon_loader_thread.start()
 
-            self.thread_manager.add_thread(self.lexicon_loader_thread)
-
-            self.lexicon_loader_thread.start()
+            except Exception as e:
+                self.button_manager.restore_states()
+                self.custom_lexicon_button.setText("Load Lexicon")
+                QMessageBox.critical(self, "Error", f"Failed to start lexicon loading: {str(e)}")
 
     def on_lexicon_loaded(self, result, success):
         self.unified_progress_bar.setVisible(False)
-        self.custom_lexicon_button.setEnabled(True)
-        self.sentiment_button.setEnabled(False)
-
-        if success:
-            if self.sentiment_mode == "TextBlob (Custom Lexicon)":
-                self.custom_textblob_lexicon_path = result
-                self.textblob_analyzer = CustomTextBlobSentimentAnalyzer(self.custom_textblob_lexicon_path)
-                QMessageBox.information(self, "Success", "Custom TextBlob lexicon loaded successfully!")
-                self.change_sentiment_mode(self.sentiment_mode)
+        self.button_manager.restore_states()
+        self.custom_lexicon_button.setText("Load Lexicon")
+        
+        try:
+            if success:
+                if self.sentiment_mode == "TextBlob (Custom Lexicon)":
+                    self.custom_textblob_lexicon_path = result
+                    self.textblob_analyzer = CustomTextBlobSentimentAnalyzer(self.custom_textblob_lexicon_path)
+                    QMessageBox.information(self, "Success", "Custom TextBlob lexicon loaded!")
+                else:
+                    self.custom_lexicon_path = result
+                    self.vader_analyzer = CustomVaderSentimentIntensityAnalyzer(custom_lexicon_file=self.custom_lexicon_path)
+                    QMessageBox.information(self, "Success", "Custom VADER lexicon loaded!")
+                
+                has_text = bool(self.text_data.strip())
+                self.sentiment_button.setEnabled(has_text)
+                
             else:
-                self.custom_lexicon_path = result
-                self.vader_analyzer = CustomVaderSentimentIntensityAnalyzer(custom_lexicon_file=self.custom_lexicon_path)
-                QMessageBox.information(self, "Success", "Custom lexicon loaded successfully! VADER will now use this lexicon.")
-                self.change_sentiment_mode(self.sentiment_mode)
-        else:
-            QMessageBox.critical(self, "Error", f"Failed to load custom lexicon: {result}")
+                raise ValueError(str(result))
+                
+        except Exception as e:
+            if self.sentiment_mode == "TextBlob (Custom Lexicon)":
+                self.custom_textblob_lexicon_path = None
+                self.textblob_analyzer = None
+            else:
+                self.custom_lexicon_path = None
+                self.vader_analyzer = None
+                
+            QMessageBox.critical(self, "Error", f"Failed to load lexicon: {str(e)}")
+            self.sentiment_button.setEnabled(False)
 
     def load_custom_model(self):
         options = QFileDialog.Options()
@@ -2495,31 +2836,36 @@ class WordCloudGenerator(QMainWindow):
             self, "Select Custom Model File", "", "Model Files (*.pt)", options=options
         )
         if model_path:
-            self.set_progress('model')
-            self.custom_model_button.setEnabled(False)
+            try:
+                self.button_manager.disable_other_buttons('custom_model_button')
+                self.custom_model_button.setText("Loading Model...")
+                self.custom_model_button.setEnabled(False)
+                self.sentiment_button.setEnabled(False)
 
-            self.model_loader_thread = CustomFileLoaderThread(model_path, "model")
-            self.model_loader_thread.file_loaded.connect(self.on_model_loaded)
-            self.active_threads.append(self.model_loader_thread)
+                self.model_loader_thread = CustomFileLoaderThread(model_path, "model")
+                self.model_loader_thread.file_loaded.connect(self.on_model_loaded)
+                self.thread_manager.add_thread(self.model_loader_thread)
+                self.model_loader_thread.start()
 
-            self.thread_manager.add_thread(self.model_loader_thread)
-
-            self.model_loader_thread.start()
+            except Exception as e:
+                self.button_manager.restore_states()
+                self.custom_model_button.setText("Load Model")
+                QMessageBox.critical(self, "Error", f"Failed to start model loading: {str(e)}")
 
     def on_model_loaded(self, result, success):
-        self.custom_model_button.setEnabled(True)
         self.unified_progress_bar.setVisible(False)
-
-        if success:
-            try:
+        self.button_manager.restore_states()
+        self.custom_model_button.setText("Load Model")
+        
+        try:
+            if success:
                 from flair.models import TextClassifier
                 from flair.data import Sentence
 
                 if not isinstance(result, TextClassifier):
-                    QMessageBox.critical(self, "Error", "Invalid model type. Please load a valid Flair TextClassifier model.")
-                    return
+                    raise ValueError("Invalid model type. Please load a valid Flair TextClassifier model.")
 
-                test_sentence = Sentence("This is a test sentence")
+                test_sentence = Sentence("test")
                 result.predict(test_sentence)
                 
                 if not test_sentence.labels:
@@ -2527,50 +2873,52 @@ class WordCloudGenerator(QMainWindow):
                     
                 label = test_sentence.labels[0].value
                 if label not in ['POSITIVE', 'NEGATIVE', 'NEUTRAL']:
-                    raise ValueError(f"Model produces incompatible labels: {label}. Expected: POSITIVE/NEGATIVE/NEUTRAL")
+                    raise ValueError(f"Model produces incompatible labels: {label}")
 
                 self.flair_classifier_cuslang = result
-                QMessageBox.information(self, "Success", "Custom model loaded successfully! Flair will now use this model.")
+                QMessageBox.information(self, "Success", "Custom model loaded successfully!")
+                
+                has_text = bool(self.text_data.strip())
+                self.sentiment_button.setEnabled(has_text)
+                
+            else:
+                raise ValueError(str(result))
 
-            except Exception as e:
-                QMessageBox.critical(self, "Model Test Failed", 
-                    f"Model validation failed: {str(e)}\n\n"
-                    "Please ensure this is a valid sentiment analysis model that produces POSITIVE/NEGATIVE/NEUTRAL labels.\n"
-                    "BERT models may need to be fine-tuned specifically for sentiment analysis tasks."
-                )
-                self.flair_classifier_cuslang = None
-        else:
-            QMessageBox.critical(self, "Error", f"Failed to load custom model: {result}")
+        except Exception as e:
             self.flair_classifier_cuslang = None
-        
-        self.change_sentiment_mode(self.sentiment_mode)
+            QMessageBox.critical(self, "Error", f"Failed to load custom model: {str(e)}")
+            self.sentiment_button.setEnabled(False)
 
     def load_flair_model(self):
-        if hasattr(self, "flair_loader_thread") and self.flair_loader_thread and self.flair_loader_thread.isRunning():
-            self.flair_loader_thread.wait()
-            self.flair_loader_thread.quit()
-            self.flair_loader_thread.wait()
+        
+        try:
+            self.button_manager.disable_other_buttons('sentiment_button')
+            self.sentiment_button.setText("Loading Flair...")
+            self.sentiment_button.setEnabled(False)
+            
+            self.flair_loader_thread = FlairModelLoaderThread()
+            self.flair_loader_thread.model_loaded.connect(self.on_flair_model_loaded)
+            self.flair_loader_thread.error_occurred.connect(self.on_flair_model_error)
+            self.flair_loader_thread.finished.connect(self.cleanup_flair_thread)
 
-        self.set_progress('model')
-        self.custom_model_button.setEnabled(False)
-        self.sentiment_button.setEnabled(False)
-        QApplication.processEvents()
+            self.thread_manager.add_thread(self.flair_loader_thread)
+            self.add_managed_thread(self.flair_loader_thread)
 
-        self.flair_loader_thread = FlairModelLoaderThread()
-        self.flair_loader_thread.model_loaded.connect(self.on_flair_model_loaded)
-        self.flair_loader_thread.error_occurred.connect(self.on_flair_model_error)
-        self.flair_loader_thread.finished.connect(self.cleanup_flair_thread)
-
-        self.thread_manager.add_thread(self.flair_loader_thread)
-        self.add_managed_thread(self.flair_loader_thread)
-
-        self.flair_loader_thread.start()
+            self.flair_loader_thread.start()
+            
+        except Exception as e:
+            self.button_manager.restore_states()
+            self.sentiment_button.setText("Analyze Sentiment")
+            QMessageBox.critical(self, "Error", f"Failed to load Flair: {str(e)}")
 
     def on_flair_model_loaded(self, model):
+        self.unified_progress_bar.setVisible(False)
+        self.button_manager.restore_states()
+        self.sentiment_button.setText("Analyze Sentiment")
+        
         if model:
-            self.unified_progress_bar.setVisible(False)
             self.flair_classifier = model
-
+            
             if self.flair_first_load:
                 self.flair_first_load = False
                 QMessageBox.information(self, "Ready", "Flair library loaded successfully!")
@@ -2578,18 +2926,14 @@ class WordCloudGenerator(QMainWindow):
             if self.sentiment_mode == "Flair (Custom Model)":
                 self.custom_model_button.setEnabled(True)
                 if not self.flair_classifier_cuslang:
-                    QMessageBox.warning(
-                        self, "Custom Model Required", "Please load your custom model using the 'Load Model' button"
-                    )
-
-            if self.flair_loader_thread is not None:
-                self.flair_loader_thread.quit()
-                self.flair_loader_thread.wait()
-                self.flair_loader_thread = None
-
-            self.change_sentiment_mode(self.sentiment_mode)
+                    self.sentiment_button.setEnabled(False)
+                    QMessageBox.information(self, "Next Step", "Please load your custom model")
+            else:
+                has_text = bool(self.text_data.strip())
+                self.sentiment_button.setEnabled(has_text)
         else:
-            QMessageBox.critical(self, "Error", "Flair model failed to load. Please try again.")
+            self.sentiment_button.setEnabled(False)
+            QMessageBox.critical(self, "Error", "Failed to load Flair model")
 
     def on_flair_model_error(self, error):
         self.unified_progress_bar.setVisible(False)
@@ -2648,51 +2992,37 @@ class WordCloudGenerator(QMainWindow):
         """Initialize and update stopwords with consistent preprocessing"""
         from nltk.corpus import stopwords
         
-        # Get base stopwords
         try:
             default_stopwords = set(stopwords.words('english'))
         except:
-            import nltk
-            nltk.download('stopwords')
-            default_stopwords = set(stopwords.words('english'))
+            default_stopwords = STOPWORDS
             
-        # Add common problematic words
-        default_stopwords.update({
-            'let', 'lets', "let's", 'going', 'like', 'would',
-            'could', 'might', 'must', 'need', 'wants', 'way'
-        })
-        
-        # Clean and normalize
         default_stopwords = {word.lower().strip() for word in default_stopwords}
         
-        # Add custom stopwords if provided
         if custom_stopwords:
             custom_stopwords = {word.lower().strip() for word in custom_stopwords if word.strip()}
             self.stop_words = default_stopwords.union(custom_stopwords)
         else:
             self.stop_words = default_stopwords
 
-        # Configure vectorizers with consistent settings
         vectorizer_config = {
-            # Match word characters, numbers, and common punctuation, minimum 2 chars
             'token_pattern': r'(?u)\b[a-zA-Z][a-zA-Z0-9\'-]*[a-zA-Z0-9]\b',
             'stop_words': list(self.stop_words),
             'lowercase': True,
             'strip_accents': 'unicode',
             'max_features': 1000,
             'min_df': 1,
-            'max_df': 0.95  # Ignore terms that appear in >95% of documents
+            'max_df': 0.95
         }
         
         self.vectorizer = CountVectorizer(**vectorizer_config)
         self.tfidf = TfidfVectorizer(**vectorizer_config)
-        
+
     def _extract_tfidf(self, text, num_keywords):
         """Extract keywords using TF-IDF with consistent preprocessing"""
         if not hasattr(self, 'stop_words'):
             self.update_stopwords_for_topic()
             
-        # Use same configuration as topic analysis
         vectorizer = TfidfVectorizer(
             token_pattern=r'(?u)\b[a-zA-Z][a-zA-Z0-9\'-]*[a-zA-Z0-9]\b',
             stop_words=list(self.stop_words),
@@ -2703,19 +3033,15 @@ class WordCloudGenerator(QMainWindow):
         )
         
         try:
-            # Split into meaningful chunks
             sentences = [s.strip() for s in text.split('.') if s.strip()]
             if not sentences:
                 sentences = [text]
                 
-            # Extract features
             response = vectorizer.fit_transform(sentences)
             feature_names = vectorizer.get_feature_names_out()
             
-            # Calculate mean scores across sentences
             scores = response.mean(axis=0).A[0]
             
-            # Sort by score
             pairs = list(zip(scores, feature_names))
             pairs.sort(reverse=True)
             
@@ -2729,30 +3055,29 @@ class WordCloudGenerator(QMainWindow):
     def _process_topic_modeling(self, text, num_topics, model_type='lda'):
         """Generic topic modeling processor"""
         try:
-            # Preprocess text
             sentences = [sent.strip() for sent in text.split('.') if sent.strip()] or [text]
             
-            # Create document-term matrix
             vectorizer = self.vectorizer if model_type == 'lda' else self.tfidf
             dtm = vectorizer.fit_transform(sentences)
             
-            # Adjust topics if needed
             num_topics = min(num_topics, max(2, dtm.shape[1] - 1))
             
-            # Configure and fit model
             model_class = LatentDirichletAllocation if model_type == 'lda' else NMF
             model_opts = {
                 'n_components': num_topics,
                 'random_state': 42,
-                'max_iter': 20 if model_type == 'lda' else 200
+                'max_iter': 20 if model_type == 'lda' else 500
             }
+            if model_type == 'nmf':
+                model_opts['init'] = 'nndsvd'
+                model_opts['tol'] = 1e-4
+
             if model_type == 'lda':
                 model_opts['learning_method'] = 'online'
                 
             model = model_class(**model_opts)
             model.fit(dtm)
             
-            # Extract topics
             terms = vectorizer.get_feature_names_out()
             return [{
                 'topic': f'Topic {idx + 1}',
@@ -2824,7 +3149,6 @@ class WordCloudGenerator(QMainWindow):
             if file_path:
                 with open(file_path, 'r', encoding='utf-8') as file:
                     stopwords = file.read().strip()
-                    # Append to existing text if there is any
                     current_text = self.stopword_entry.toPlainText().strip()
                     if (current_text):
                         stopwords = current_text + "\n" + stopwords
@@ -2834,10 +3158,50 @@ class WordCloudGenerator(QMainWindow):
         except Exception as e:
             QMessageBox.critical(self, "Error", f"Failed to load stopwords file: {str(e)}")
 
+    def show_token_warning(self, tokens):
+        """Show non-blocking warning message about detected tokens"""
+        msg = QMessageBox(self)
+        msg.setIcon(QMessageBox.Information)
+        msg.setWindowTitle("Analysis Notification")
+        msg.setWindowModality(Qt.NonModal)
+        msg.setTextFormat(Qt.TextFormat.RichText)
+        
+        message = f"""
+        <b>Inconsistent tokens detected:</b> "{tokens}"<br><br>
+
+        These tokens were detected by the tokenizer but are not found in your stopwords list.  
+        This is not necessarily an issue, but it may indicate:<br>
+        • Some unimportant words slipping through.<br>
+        • Potential noise in your dataset.<br><br>
+
+        <b>No immediate action is required.</b> However, if you’d like to refine your stopwords list, you may consider the following:<br>
+        1. Review these tokens.<br>
+        2. Add them to the stopwords list if they are irrelevant.<br>
+        3. Regenerate the analysis for improved results.<br><br>
+
+        <i>You can add them directly via the stopwords entry field.</i>
+        """
+
+        msg.setText(message)
+        msg.setStandardButtons(QMessageBox.Ok)
+        
+        msg.show()
+
+    def cleanup_cache(self):
+        """Clear cached resources when memory is low"""
+        try:
+            self.get_wordcloud.cache_clear()
+            
+            self._cached_models.clear()
+            self._cached_fonts.clear()
+            self._cached_colormaps.clear()
+                
+        except Exception as e:
+            print(f"Cache cleanup error: {e}")
+
 def is_connected():
     """Check if there is internet connection"""
     try:
-        # Test connection to Google's DNS
         socket.create_connection(("8.8.8.8", 53), timeout=3)
         return True
     except OSError:
@@ -2849,7 +3213,7 @@ if __name__ == "__main__":
     loop = QEventLoop(app)
     asyncio.set_event_loop(loop)
     
-    ex = WordCloudGenerator()
+    ex = MainClass()
     ex.show()
 
     def cleanup():

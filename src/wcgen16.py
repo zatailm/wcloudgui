@@ -2410,7 +2410,7 @@ class TopicAnalysisTab(QWidget):
         if self.parent_widget:
             self.parent_widget.set_progress('topics', False)
         self.parent_widget.button_manager.restore_states()
-        self.show_results_dialog("Topic Analysis", topics)
+        self.show_results_dialog(self.topic_method.currentText(), topics)
 
     def on_keyword_extraction_complete(self, keywords):
         if self.parent_widget:

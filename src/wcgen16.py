@@ -38,12 +38,30 @@ import matplotlib
 matplotlib.use("QtAgg")
 import numpy as np
 from PIL import Image
+from matplotlib.font_manager import FontProperties
+
+from sumy.parsers.plaintext import PlaintextParser
+from sumy.nlp.tokenizers import Tokenizer
+from sumy.summarizers.lsa import LsaSummarizer
 
 # Constants
 if getattr(sys, 'frozen', False):
     APP_DIR = Path(sys.executable).parent
 else:
     APP_DIR = Path(__file__).parent
+
+# if getattr(sys, 'frozen', False):
+#     # Jika aplikasi dibekukan (dibuild)
+#     lib_dir = os.path.join(os.path.dirname(sys.executable), "lib")
+# else:
+#     lib_dir = os.path.join(os.path.dirname(__file__), "lib")
+
+# # Tambahkan folder lib ke PATH (untuk Windows)
+# if sys.platform == "win32":
+#     os.environ["PATH"] = lib_dir + ";" + os.environ["PATH"]
+#     # Atau gunakan os.add_dll_directory untuk Python 3.8+
+#     if hasattr(os, 'add_dll_directory'):
+#         os.add_dll_directory(lib_dir)
 
 ICON_PATH = APP_DIR / "icon.ico"
 
@@ -422,7 +440,7 @@ class MainClass(QMainWindow):
             "Supports TXT, CSV, XLS/XLSX, PDF, DOC/DOCX.\n"
             "Ensure your text is well-formatted for better results."
         )
-        file_layout.addWidget(self.load_file_button, 1, 0, 1, 3)
+        file_layout.addWidget(self.load_file_button, 1, 0, 1, 2)
 
         self.view_fulltext_button = QPushButton("View Full Text", self)
         self.view_fulltext_button.clicked.connect(self.view_full_text)
@@ -432,7 +450,17 @@ class MainClass(QMainWindow):
             "Allows you to inspect the complete text before generating the word cloud.\n"
             "Useful for verifying text input and checking formatting."
         )
-        file_layout.addWidget(self.view_fulltext_button, 1, 3, 1, 3)
+        file_layout.addWidget(self.view_fulltext_button, 1, 2, 1, 2)
+
+        self.summarize_button = QPushButton("Summarize", self)
+        self.summarize_button.clicked.connect(self.summarize_text)
+        self.summarize_button.setEnabled(False)
+        self.summarize_button.setToolTip(
+            "Summarize the text content using the LSA (Latent Semantic Analysis) method.\n"
+            "This extractive summarization technique selects the most important sentences,\n"
+            "helping to generate concise word clouds and improve sentiment analysis."
+        )
+        file_layout.addWidget(self.summarize_button, 1, 4, 1, 2)
 
         file_group.setLayout(file_layout)
         layout.addWidget(file_group)
@@ -856,6 +884,7 @@ class MainClass(QMainWindow):
         self.text_stats_button.setEnabled(has_text)
         self.save_wc_button.setEnabled(has_text)
         self.sentiment_button.setEnabled(has_text)
+        self.summarize_button.setEnabled(has_text)
         
         if hasattr(self, 'topic_tab'):
             if hasattr(self.topic_tab, 'analyze_topics_btn'):
@@ -1028,6 +1057,7 @@ class MainClass(QMainWindow):
             self.save_wc_button.setEnabled(True)
             self.text_stats_button.setEnabled(True)
             self.view_fulltext_button.setEnabled(True)
+            self.summarize_button.setEnabled(True)
             
             self.load_file_button.setEnabled(True)
 
@@ -1047,6 +1077,7 @@ class MainClass(QMainWindow):
         self.text_stats_button.setEnabled(False)
         self.view_fulltext_button.setEnabled(False)
         self.sentiment_button.setEnabled(False)
+        self.summarize_button.setEnabled(False)
 
     def choose_mask(self):
         options = QFileDialog.Options()
@@ -1099,26 +1130,32 @@ class MainClass(QMainWindow):
 
             text_browser = QTextBrowser()
 
-            html_content = f"""
-            <h3>Text Analysis Overview</h3>
-            <table border="1" cellspacing="0" cellpadding="2" width="100%">
-                <tr><th align="left">Metric</th><th align="left">Value</th></tr>
+            txtstat_content = f"""
+            <h3 style="text-align: center;">Text Analysis Overview</h3>
+            <table border="1" cellspacing="0" cellpadding="2" width="100%" style="margin-top: 20px;">
+                <tr style="background-color: #d3d3d3;">
+                    <th>Metric</th>
+                    <th>Value</th>
+                </tr>
                 <tr><td>Text Length</td><td>{text_length} characters</td></tr>
                 <tr><td>Word Count</td><td>{word_count}</td></tr>
                 <tr><td>Character Count (excluding spaces)</td><td>{char_count_excl_spaces}</td></tr>
                 <tr><td>Average Word Length</td><td>{avg_word_length:.2f}</td></tr>
                 <tr><td>Most Frequent Words</td><td>{", ".join(most_frequent_words)}</td></tr>
             </table>
-            <br>
-            <h3>Word Count</h3>
-            <table border="1" cellspacing="0" cellpadding="2" width="100%">
-                <tr><th align="left">Word</th><th align="left">Count</th></tr>
+
+            <h3 style="margin-top: 20px; text-align: center;">Word Count</h3>  
+            <table border="1" cellspacing="0" cellpadding="2" width="100%"style="margin-top: 20px;">
+                <tr style="background-color: #d3d3d3;">
+                    <th>Word</th>
+                    <th>Count</th>
+                </tr>
             """
             for word, count in sorted_word_counts:
-                html_content += f"<tr><td>{word}</td><td>{count}</td></tr>"
-            html_content += "</table>"
+                txtstat_content += f"<tr><td>{word}</td><td>{count}</td></tr>"
+            txtstat_content += "</table>"
 
-            text_browser.setHtml(html_content)
+            text_browser.setHtml(txtstat_content)
             text_browser.setOpenExternalLinks(True)
             text_browser.setReadOnly(True)
             layout.addWidget(text_browser)
@@ -1212,7 +1249,6 @@ class MainClass(QMainWindow):
             if title_text:
                 title_font = None
                 if self.font_choice.currentText() != "Default":
-                    FontProperties = get_font_properties()
                     title_font = FontProperties(
                         fname=self.font_map.get(self.font_choice.currentText()),
                         size=self.title_font_size.value()
@@ -1386,12 +1422,63 @@ class MainClass(QMainWindow):
         QMessageBox.warning(self, "Translation Error", error_msg)
         self.enable_buttons()
 
+    # def on_sentiment_analyzed(self, result):
+    #     self.set_progress('model', False)
+    #     self.button_manager.restore_states()
+    #     dialog = QDialog(self)
+    #     dialog.setWindowTitle(f"Sentiment Analysis Results - {self.sentiment_mode}")
+    #     dialog.setMinimumSize(400, 270)
+
+    #     layout = QVBoxLayout()
+    #     text_browser = QTextBrowser()
+
+    #     score_type = ""
+    #     if self.sentiment_mode in ["VADER", "VADER (Custom Lexicon)"]:
+    #         score_type = "Compound Score"
+    #     elif self.sentiment_mode in ["TextBlob", "TextBlob (Custom Lexicon)"]:
+    #         score_type = "Polarity Score"
+    #     elif self.sentiment_mode in ["Flair", "Flair (Custom Model)"]:
+    #         score_type = "Confidence Score"
+
+    #     sentiment_result = f"""
+    #     <table border="1" cellspacing="0" cellpadding="2" width="100%">
+    #         <tr><th align="left">Metric</th><th align="left">Value</th></tr>
+    #         <tr><td>Analysis Mode</td><td>{self.sentiment_mode}</td></tr>
+    #         <tr><td>Sentiment Label</td><td><b>{result["sentiment_label"]}</b></td></tr>
+    #         <tr><td>Positive Sentiment</td><td>{result["positive_score"]:.2f}</td></tr>
+    #         <tr><td>Neutral Sentiment</td><td>{result["neutral_score"]:.2f}</td></tr>
+    #         <tr><td>Negative Sentiment</td><td>{result["negative_score"]:.2f}</td></tr>
+    #         <tr><td>{score_type}</td><td>{result["compound_score"]:.2f}</td></tr>
+    #     """
+
+    #     if self.sentiment_mode in ["TextBlob", "TextBlob (Custom Lexicon)"]:
+    #         try:
+    #             subj_value = float(result["subjectivity"])
+    #             sentiment_result += f'<tr><td>Subjectivity</td><td>{subj_value:.2f}</td></tr>'
+    #         except (ValueError, TypeError):
+    #             sentiment_result += f'<tr><td>Subjectivity</td><td>{result["subjectivity"]}</td></tr>'
+
+    #     sentiment_result += "</table>"
+
+    #     text_browser.setHtml(sentiment_result)
+    #     text_browser.setOpenExternalLinks(True)
+    #     text_browser.setReadOnly(True)
+    #     layout.addWidget(text_browser)
+
+    #     close_button = QPushButton("Close")
+    #     close_button.clicked.connect(dialog.accept)
+    #     layout.addWidget(close_button)
+
+    #     dialog.setLayout(layout)
+    #     dialog.show()
+
     def on_sentiment_analyzed(self, result):
         self.set_progress('model', False)
         self.button_manager.restore_states()
+        
         dialog = QDialog(self)
         dialog.setWindowTitle(f"Sentiment Analysis Results - {self.sentiment_mode}")
-        dialog.setMinimumSize(500, 270)
+        dialog.setMinimumSize(400, 350)  # Tambahkan tinggi untuk catatan
 
         layout = QVBoxLayout()
         text_browser = QTextBrowser()
@@ -1404,9 +1491,14 @@ class MainClass(QMainWindow):
         elif self.sentiment_mode in ["Flair", "Flair (Custom Model)"]:
             score_type = "Confidence Score"
 
+        # Tabel Hasil Analisis Sentimen
         sentiment_result = f"""
-        <table border="1" cellspacing="0" cellpadding="2" width="100%">
-            <tr><th align="left">Metric</th><th align="left">Value</th></tr>
+        <h3 style="text-align: center;">Sentiment Analysis Results</h3>
+        <table border="1" cellspacing="0" cellpadding="2" width="100%" style="margin-top: 20px;">
+            <tr style="background-color: #d3d3d3;">
+                <th>Metric</th>
+                <th>Value</th>
+            </tr>
             <tr><td>Analysis Mode</td><td>{self.sentiment_mode}</td></tr>
             <tr><td>Sentiment Label</td><td><b>{result["sentiment_label"]}</b></td></tr>
             <tr><td>Positive Sentiment</td><td>{result["positive_score"]:.2f}</td></tr>
@@ -1424,7 +1516,63 @@ class MainClass(QMainWindow):
 
         sentiment_result += "</table>"
 
-        text_browser.setHtml(sentiment_result)
+        # **Tambahkan Catatan Berdasarkan Metode Sentimen**
+        sentiment_notes = ""
+
+        if self.sentiment_mode in ["TextBlob", "TextBlob (Custom Lexicon)"]:
+            sentiment_notes = """
+            <p><b>Note:</b></p>
+            <ul>
+                <li>Sentiment analysis is performed using <b>TextBlob</b>, which assigns a sentiment polarity score between -1 and 1.</li>
+                <li><b>Polarity:</b> A value close to <b>-1</b> indicates a strongly negative sentiment, while a value close to <b>1</b> indicates a strongly positive sentiment.</li>
+                <li><b>Neutral Range:</b> Scores near <b>0</b> suggest a neutral sentiment.</li>
+                <li><b>Subjectivity Score:</b> Ranges from <b>0</b> (very objective) to <b>1</b> (very subjective).</li>
+                <li><b>Objective vs Subjective:</b> 
+                    <ul>
+                        <li>A low subjectivity score (<b>≤ 0.3</b>) suggests that the text is more factual and objective.</li>
+                        <li>A high subjectivity score (<b>≥ 0.7</b>) indicates that the text contains opinions, emotions, or subjective statements.</li>
+                    </ul>
+                </li>
+                <li>Results may vary depending on the text's context, sarcasm, and linguistic nuances.</li>
+            </ul>
+            """
+
+        elif self.sentiment_mode in ["VADER", "VADER (Custom Lexicon)"]:
+            sentiment_notes = """
+            <p><b>Note:</b></p>
+            <ul>
+                <li>Sentiment analysis is performed using <b>VADER</b>, which is optimized for social media, short texts, and informal language.</li>
+                <li><b>Compound Score:</b> The overall sentiment score, ranging from <b>-1</b> (very negative) to <b>1</b> (very positive).</li>
+                <li><b>Thresholds:</b>
+                    <ul>
+                        <li>Compound score <b>≥ 0.05</b>: Positive sentiment.</li>
+                        <li>Compound score <b>≤ -0.05</b>: Negative sentiment.</li>
+                        <li>Compound score between <b>-0.05</b> and <b>0.05</b>: Neutral sentiment.</li>
+                    </ul>
+                </li>
+                <li>VADER considers punctuation, capitalization, and emoticons to enhance sentiment detection.</li>
+            </ul>
+            """
+
+        elif self.sentiment_mode in ["Flair", "Flair (Custom Model)"]:
+            sentiment_notes = """
+            <p><b>Note:</b></p>
+            <ul>
+                <li>Sentiment analysis is performed using <b>Flair</b>, a deep learning-based model for text classification.</li>
+                <li><b>Model:</b> Flair uses a pre-trained <b>Bidirectional LSTM</b> trained on large sentiment datasets.</li>
+                <li><b>Sentiment Labels:</b> The output consists of two possible classifications:
+                    <ul>
+                        <li><b>POSITIVE</b>: Indicates an overall positive sentiment.</li>
+                        <li><b>NEGATIVE</b>: Indicates an overall negative sentiment.</li>
+                    </ul>
+                </li>
+                <li><b>Confidence Score:</b> Flair provides a probability score (0 to 1) indicating how confident the model is in its classification.</li>
+                <li>Unlike lexicon-based approaches (e.g., TextBlob, VADER), Flair captures <b>context and word relationships</b>, making it more robust for longer and complex texts.</li>
+            </ul>
+            """
+
+        # **Gabungkan hasil analisis dan catatan**
+        text_browser.setHtml(sentiment_result + sentiment_notes)
         text_browser.setOpenExternalLinks(True)
         text_browser.setReadOnly(True)
         layout.addWidget(text_browser)
@@ -1926,6 +2074,43 @@ class MainClass(QMainWindow):
         except Exception as e:
             print(f"Cache cleanup error: {e}")
 
+    def summarize_text(self):
+        if not self.text_data:
+            QMessageBox.critical(self, "Error", "No text data available for summarization.\nPlease load a text file first.")
+            return
+
+        self.disable_buttons()
+        self.summarize_thread = SummarizeThread(self.text_data)
+        self.summarize_thread.summary_ready.connect(self.show_summary)
+        self.summarize_thread.error_occurred.connect(self.handle_summarize_error)
+        self.summarize_thread.finished.connect(self.enable_buttons)
+        self.summarize_thread.start()
+
+    def show_summary(self, summary):
+        dialog = QDialog(self)
+        dialog.setWindowTitle("Text Summary")
+        dialog.setMinimumSize(500, 300)
+        layout = QVBoxLayout()
+
+        text_browser = QTextBrowser()
+        text_browser.setPlainText(summary)
+        layout.addWidget(text_browser)
+
+        # copy_button = QPushButton("Copy to Clipboard")
+        # copy_button.clicked.connect(lambda: QApplication.clipboard().setText(summary))
+        # layout.addWidget(copy_button)
+
+        close_button = QPushButton("Close")
+        close_button.clicked.connect(dialog.accept)
+        layout.addWidget(close_button)
+
+        dialog.setLayout(layout)
+        dialog.show()
+
+    def handle_summarize_error(self, error_msg):
+        QMessageBox.critical(self, "Error", f"Failed to summarize text: {error_msg}")
+        self.enable_buttons()
+
 # Supporting Classes 
 class LazyLoader:
     """
@@ -2347,7 +2532,8 @@ class TopicAnalysisTab(QWidget):
         self.extract_keywords_btn.setEnabled(has_text)
         
     def analyze_topics(self):
-        if not hasattr(self, 'text'):
+        # if not hasattr(self, 'text'):
+        if not self.text.strip():
             QMessageBox.warning(self, "Error", "Please load text first!")
             return
             
@@ -2436,9 +2622,9 @@ class TopicAnalysisTab(QWidget):
         self.setup_results_dialog(dialog, result_html)
         
     def show_keyword_dialog(self, method, keywords):
-        result_html = "<h3>Keyword Extraction Results</h3>"
-        result_html += "<table border='1' cellspacing='0' cellpadding='3' width='100%'>"
-        result_html += "<tr><th>Keyword</th><th>Score</th></tr>"
+        result_html = "<h3 style='text-align: center;'>Keyword Extraction Results</h3>"
+        result_html += "<table border='1' cellspacing='0' cellpadding='3' width='100%' style='margin-top: 20px;'>"
+        result_html += "<tr style='background-color: #d3d3d3;'><th>Keyword</th><th>Score</th></tr>"
         
         for kw in keywords:
             result_html += f"<tr><td>{kw['keyword']}</td><td>{kw['score']:.4f}</td></tr>"
@@ -2866,7 +3052,7 @@ class SentimentAnalysisThread(QThread):
             "negative_score": 0,
             "compound_score": 0,
             "sentiment_label": "N/A",
-            "subjectivity": "N/A (only available in TextBlob mode)",
+            "subjectivity": "N/A",
         }
 
         try:
@@ -3150,6 +3336,24 @@ class MPWordCloud(WordCloud):
             
         self.generator_thread.start()
         return self
+
+class SummarizeThread(QThread):
+    summary_ready = Signal(str)
+    error_occurred = Signal(str)
+
+    def __init__(self, text):
+        super().__init__()
+        self.text = text
+
+    def run(self):
+        try:
+            parser = PlaintextParser.from_string(self.text, Tokenizer("english"))
+            summarizer = LsaSummarizer()
+            summary = summarizer(parser.document, 5)  # Summarize to 5 sentences
+            summary_text = "\n".join(str(sentence) for sentence in summary)
+            self.summary_ready.emit(summary_text)
+        except Exception as e:
+            self.error_occurred.emit(str(e))
 
 # Main entry point
 if __name__ == "__main__":

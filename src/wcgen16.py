@@ -1,4 +1,3 @@
-# Standard library imports
 import sys
 import os
 import re
@@ -14,7 +13,6 @@ import hashlib
 import tempfile
 import shutil
 
-# Third-party imports
 import torch
 import psutil
 os.environ["QT_API"] = "pyside6"
@@ -48,16 +46,13 @@ os.environ["QT_SCALE_FACTOR"] = "0.75"
 
 def setup_dll_path():
     if getattr(sys, 'frozen', False):
-        # Jika running sebagai executable
         application_path = os.path.dirname(sys.executable)
         dll_path = os.path.join(application_path, 'lib')
-        # Tambahkan path DLL ke PATH environment
         if dll_path not in os.environ['PATH']:
             os.environ['PATH'] = dll_path + os.pathsep + os.environ['PATH']
         
 setup_dll_path()
 
-# Constants
 if getattr(sys, 'frozen', False):
     APP_DIR = Path(sys.executable).parent
 else:
@@ -86,7 +81,6 @@ THREAD_TIMEOUT = {
     "TERMINATION": 2000
 }
 
-# Utility Functions
 def sanitize_path(path):
     path = os.path.normpath(path)
     base_dir = os.path.abspath(path)
@@ -118,7 +112,6 @@ def is_connected():
     except OSError:
         return False
 
-# Main Application Class
 class MainClass(QMainWindow):
     def __init__(self):
         super().__init__()
@@ -377,7 +370,7 @@ class MainClass(QMainWindow):
         filename_container.setStyleSheet("""
             QFrame { 
                 border: 1px solid #c0c0c0; 
-                background: white;
+                background: transparent;
                 padding: 0px;
                 margin: 0px;
             }
@@ -1073,35 +1066,11 @@ class MainClass(QMainWindow):
         dialog.setLayout(layout)
         dialog.show()
 
-    # def open_file(self):
-    #     options = QFileDialog.Options()
-    #     file_path, _ = QFileDialog.getOpenFileName(
-    #         self, "Load Text File", "", "Supported Files (*.txt *.pdf *.doc *.docx *.csv *.xlsx *.xls);;All Files (*)", options=options
-    #     )
-    #     if not file_path:
-    #         return
-
-    #     self.set_progress('file')
-    
-    #     try:
-    #         self.file_loader_thread = FileLoaderThread(file_path)
-    #         self.file_loader_thread.file_loaded.connect(self.on_file_loaded)
-    #         self.file_loader_thread.file_error.connect(self.handle_file_error)
-
-    #         self.thread_manager.add_thread(self.file_loader_thread)
-
-    #         self.file_loader_thread.start()
-
-    #     except Exception as e:
-    #         self.unified_progress_bar.setVisible(False)
-    #         QMessageBox.critical(self, "Error", f"Failed to load file: {e}")
-
     def open_file(self):
         dialog = QFileDialog(self)
         dialog.setWindowTitle("Load Text File")
         dialog.setNameFilter("Supported Files (*.txt *.pdf *.doc *.docx *.csv *.xlsx *.xls);;All Files (*)")
         dialog.setOptions(QFileDialog.Options())
-        dialog.setContextMenuPolicy(Qt.NoContextMenu)  # Menonaktifkan context menu
 
         if dialog.exec_():
             file_path = dialog.selectedFiles()[0]
@@ -1220,7 +1189,7 @@ class MainClass(QMainWindow):
             txtstat_content = f"""
             <h3 style="text-align: center;">Text Analysis Overview</h3>
             <table border="1" cellspacing="0" cellpadding="2" width="100%" style="margin-top: 20px;">
-                <tr style="background-color: #d3d3d3;">
+                <tr style="background-color: #d3d3d3; color: black">
                     <th>Metric</th>
                     <th>Value</th>
                 </tr>
@@ -1233,7 +1202,7 @@ class MainClass(QMainWindow):
 
             <h3 style="margin-top: 20px; text-align: center;">Word Count</h3>  
             <table border="1" cellspacing="0" cellpadding="2" width="100%"style="margin-top: 20px;">
-                <tr style="background-color: #d3d3d3;">
+                <tr style="background-color: #d3d3d3; color: black">
                     <th>Word</th>
                     <th>Count</th>
                 </tr>
@@ -1255,7 +1224,6 @@ class MainClass(QMainWindow):
             self.stats_dialog.finished.connect(lambda: self.button_manager.restore_states())
             self.stats_dialog.show()
             
-            # Ensure buttons are enabled after dialog is opened
             self.button_manager.restore_states()
             
         except Exception as e:
@@ -1514,7 +1482,7 @@ class MainClass(QMainWindow):
         
         dialog = QDialog(self)
         dialog.setWindowTitle(f"Sentiment Analysis Results - {self.sentiment_mode}")
-        dialog.setMinimumSize(400, 350)  # Tambahkan tinggi untuk catatan
+        dialog.setMinimumSize(400, 350)
         dialog.setSizeGripEnabled(True)
 
         layout = QVBoxLayout()
@@ -1528,11 +1496,10 @@ class MainClass(QMainWindow):
         elif self.sentiment_mode in ["Flair", "Flair (Custom Model)"]:
             score_type = "Confidence Score"
 
-        # Tabel Hasil Analisis Sentimen
         sentiment_result = f"""
         <h3 style="text-align: center;">Sentiment Analysis Results</h3>
         <table border="1" cellspacing="0" cellpadding="2" width="100%" style="margin-top: 20px;">
-            <tr style="background-color: #d3d3d3;">
+            <tr style="background-color: #d3d3d3; color: black">
                 <th>Metric</th>
                 <th>Value</th>
             </tr>
@@ -1553,7 +1520,6 @@ class MainClass(QMainWindow):
 
         sentiment_result += "</table>"
 
-        # **Tambahkan Catatan Berdasarkan Metode Sentimen**
         sentiment_notes = ""
 
         if self.sentiment_mode in ["TextBlob", "TextBlob (Custom Lexicon)"]:
@@ -1608,7 +1574,6 @@ class MainClass(QMainWindow):
             </ul>
             """
 
-        # **Gabungkan hasil analisis dan catatan**
         text_browser.setHtml(sentiment_result + sentiment_notes)
         text_browser.setOpenExternalLinks(True)
         text_browser.setReadOnly(True)
@@ -1635,28 +1600,23 @@ class MainClass(QMainWindow):
         status_text = ""
         has_text = bool(self.text_data.strip())
 
-        # Reset button states
         self.custom_lexicon_button.setEnabled(False)
         self.custom_model_button.setEnabled(False)
         self.sentiment_button.setEnabled(False)
 
         if mode == "Flair":
             if self.flair_classifier:
-                # Flair sudah dimuat
                 status_text = "Flair: Ready"
                 self.sentiment_button.setEnabled(has_text)
             else:
-                # Flair belum dimuat
                 status_text = "Loading..."
                 self.load_flair_model()
 
         elif mode == "Flair (Custom Model)":
             if not self.flair_classifier:
-                # Flair belum dimuat sama sekali
                 self.load_flair_model()
                 status_text = "Initializing Flair environment..."
             else:
-                # Flair sudah dimuat
                 self.custom_model_button.setEnabled(True)
                 if self.flair_classifier_cuslang:  
                     status_text = "Ready"
@@ -1685,7 +1645,6 @@ class MainClass(QMainWindow):
                 )
 
         else:
-            # Untuk mode TextBlob dan VADER default
             status_text = "Ready" if has_text else "Load text first!"
             self.sentiment_button.setEnabled(has_text)
 
@@ -1780,7 +1739,6 @@ class MainClass(QMainWindow):
         
         try:
             if success:
-                # Validasi model
                 from flair.models import TextClassifier
                 from flair.data import Sentence
 
@@ -1797,15 +1755,12 @@ class MainClass(QMainWindow):
                 if label not in ['POSITIVE', 'NEGATIVE', 'NEUTRAL']:
                     raise ValueError(f"Model produces incompatible labels: {label}")
 
-                # Set model dan notifikasi
                 self.flair_classifier_cuslang = result
                 QMessageBox.information(self, "Success", "Custom model loaded successfully!")
                 
-                # Restore semua state tombol sebelumnya dan aktifkan tombol yang perlu
                 self.button_manager.restore_states()
                 has_text = bool(self.text_data.strip())
                 
-                # Aktifkan tombol-tombol yang bergantung pada teks
                 if has_text:
                     self.sentiment_button.setEnabled(True)
                     self.view_fulltext_button.setEnabled(True)
@@ -1817,7 +1772,6 @@ class MainClass(QMainWindow):
                         if hasattr(self.topic_tab, 'extract_keywords_btn'):
                             self.topic_tab.extract_keywords_btn.setEnabled(True)
                 
-                # Pastikan tombol load model tetap aktif
                 self.custom_model_button.setEnabled(True)
                 
             else:
@@ -1827,9 +1781,7 @@ class MainClass(QMainWindow):
             self.flair_classifier_cuslang = None
             QMessageBox.critical(self, "Error", f"Failed to load custom model: {str(e)}")
             self.sentiment_button.setEnabled(False)
-            # Restore state tombol lainnya
             self.button_manager.restore_states()
-            # Pastikan tombol load model tetap aktif untuk retry
             self.custom_model_button.setEnabled(True)
 
     def load_flair_model(self):
@@ -1869,14 +1821,11 @@ class MainClass(QMainWindow):
                 QMessageBox.information(self, "Ready", "Flair library loaded successfully!")
 
             if self.sentiment_mode == "Flair":
-                # Aktifkan tombol sentiment jika ada teks
                 self.sentiment_button.setEnabled(has_text)
                 
             elif self.sentiment_mode == "Flair (Custom Model)":
-                # Aktifkan tombol load model
                 self.custom_model_button.setEnabled(True)
                 if self.flair_classifier_cuslang:
-                    # Jika custom model sudah dimuat, aktifkan sentiment button jika ada teks
                     self.sentiment_button.setEnabled(has_text)
                 else:
                     QMessageBox.information(self, "Next Step", "Please load your custom model")
@@ -1963,7 +1912,7 @@ class MainClass(QMainWindow):
             'strip_accents': 'unicode',
             'max_features': 1000,
             'min_df': 1,
-            'max_df': 1 #0.95
+            'max_df': 1
         }
         
         self.vectorizer = CountVectorizer(**vectorizer_config)
@@ -1980,7 +1929,7 @@ class MainClass(QMainWindow):
             lowercase=True,
             strip_accents='unicode',
             min_df=1,
-            max_df=1  # Diubah dari 0.95 menjadi 1 untuk konsistensi dengan LDA/NMF
+            max_df=1
         )
         
         try:
@@ -2011,13 +1960,11 @@ class MainClass(QMainWindow):
             vectorizer = self.vectorizer if model_type == 'lda' else self.tfidf
             dtm = vectorizer.fit_transform(sentences)
             
-            # Tambahkan pengecekan khusus untuk NMF
             if model_type == 'nmf':
                 max_possible_topics = min(dtm.shape[0], dtm.shape[1])
                 if num_topics > max_possible_topics:
                     raise ValueError(f"Number of topics ({num_topics}) cannot exceed {max_possible_topics} for NMF with this dataset")
             
-            # Pengecekan umum untuk kedua model
             num_topics = min(num_topics, max(2, dtm.shape[1] - 1))
             
             model_class = LatentDirichletAllocation if model_type == 'lda' else NMF
@@ -2180,10 +2127,6 @@ class MainClass(QMainWindow):
         text_browser.setPlainText(summary)
         layout.addWidget(text_browser)
 
-        # copy_button = QPushButton("Copy to Clipboard")
-        # copy_button.clicked.connect(lambda: QApplication.clipboard().setText(summary))
-        # layout.addWidget(copy_button)
-
         close_button = QPushButton("Close")
         close_button.clicked.connect(dialog.accept)
         layout.addWidget(close_button)
@@ -2195,7 +2138,6 @@ class MainClass(QMainWindow):
         QMessageBox.critical(self, "Error", f"Failed to summarize text: {error_msg}")
         self.enable_buttons()
 
-# Supporting Classes 
 class LazyLoader:
     """
     Optimized lazy loading system for managing heavy dependencies.
@@ -2625,7 +2567,6 @@ class TopicAnalysisTab(QWidget):
         self.extract_keywords_btn.setEnabled(has_text)
         
     def analyze_topics(self):
-        # if not hasattr(self, 'text'):
         if not self.text.strip():
             QMessageBox.warning(self, "Error", "Please load text first!")
             return
@@ -2718,7 +2659,7 @@ class TopicAnalysisTab(QWidget):
     def show_keyword_dialog(self, method, keywords):
         result_html = "<h3 style='text-align: center;'>Keyword Extraction Results</h3>"
         result_html += "<table border='1' cellspacing='0' cellpadding='3' width='100%' style='margin-top: 20px;'>"
-        result_html += "<tr style='background-color: #d3d3d3;'><th>Keyword</th><th>Score</th></tr>"
+        result_html += "<tr style='background-color: #d3d3d3; color: black'><th>Keyword</th><th>Score</th></tr>"
         
         for kw in keywords:
             result_html += f"<tr><td>{kw['keyword']}</td><td>{kw['score']:.4f}</td></tr>"
@@ -3446,13 +3387,12 @@ class SummarizeThread(QThread):
         try:
             parser = PlaintextParser.from_string(self.text, Tokenizer("english"))
             summarizer = LsaSummarizer()
-            summary = summarizer(parser.document, 5)  # Summarize to 5 sentences
+            summary = summarizer(parser.document, 5)
             summary_text = "\n".join(str(sentence) for sentence in summary)
             self.summary_ready.emit(summary_text)
         except Exception as e:
             self.error_occurred.emit(str(e))
 
-# Main entry point
 if __name__ == "__main__":
     app = QApplication(sys.argv)
     loop = QEventLoop(app)

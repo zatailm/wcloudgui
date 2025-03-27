@@ -44,24 +44,24 @@ from sumy.parsers.plaintext import PlaintextParser
 from sumy.nlp.tokenizers import Tokenizer
 from sumy.summarizers.lsa import LsaSummarizer
 
+os.environ["QT_SCALE_FACTOR"] = "0.75"
+
+def setup_dll_path():
+    if getattr(sys, 'frozen', False):
+        # Jika running sebagai executable
+        application_path = os.path.dirname(sys.executable)
+        dll_path = os.path.join(application_path, 'lib')
+        # Tambahkan path DLL ke PATH environment
+        if dll_path not in os.environ['PATH']:
+            os.environ['PATH'] = dll_path + os.pathsep + os.environ['PATH']
+        
+setup_dll_path()
+
 # Constants
 if getattr(sys, 'frozen', False):
     APP_DIR = Path(sys.executable).parent
 else:
     APP_DIR = Path(__file__).parent
-
-# if getattr(sys, 'frozen', False):
-#     # Jika aplikasi dibekukan (dibuild)
-#     lib_dir = os.path.join(os.path.dirname(sys.executable), "lib")
-# else:
-#     lib_dir = os.path.join(os.path.dirname(__file__), "lib")
-
-# # Tambahkan folder lib ke PATH (untuk Windows)
-# if sys.platform == "win32":
-#     os.environ["PATH"] = lib_dir + ";" + os.environ["PATH"]
-#     # Atau gunakan os.add_dll_directory untuk Python 3.8+
-#     if hasattr(os, 'add_dll_directory'):
-#         os.add_dll_directory(lib_dir)
 
 ICON_PATH = APP_DIR / "icon.ico"
 
@@ -472,7 +472,12 @@ class MainClass(QMainWindow):
         self.stopword_entry = QTextEdit(self)
         self.stopword_entry.setFixedHeight(50)
         self.stopword_entry.setPlaceholderText("Enter stopwords, separated by spaces or new lines (optional)")
-        stopwords_container.addWidget(self.stopword_entry)
+        self.stopword_entry.setToolTip(
+            "Enter stopwords (words to be excluded) separated by spaces or new lines.\n"
+            "The words you enter will be ignored in the word cloud.\n"
+            "Use custom stopwords to refine the visualization and focus on meaningful words."
+        )        
+        stopwords_container.addWidget(self.stopword_entry)     
         
         self.load_stopwords_btn = QPushButton("Load", self)
         self.load_stopwords_btn.setFixedSize(50, 50)
@@ -486,6 +491,10 @@ class MainClass(QMainWindow):
 
         self.color_theme = QComboBox(self)
         QTimer.singleShot(100, self.load_colormaps)
+        self.color_theme.setToolTip(
+            "Choose a color palette for the word cloud.\n"
+            "Darker themes work well with light backgrounds, and vice-versa."
+        )        
         wordcloud_layout.addWidget(self.color_theme, 1, 2, 1, 3)
 
         self.custom_palette_button = QPushButton("Custom", self)
@@ -497,6 +506,11 @@ class MainClass(QMainWindow):
 
         self.bg_color = QComboBox(self)
         self.bg_color.addItems(["white", "black", "gray", "blue", "red", "yellow"])
+        self.bg_color.setToolTip(
+            "Select the background color for the word cloud.\n"
+            "Use contrast for better visibility.\n"
+            "White or black backgrounds usually work best."
+        )        
         wordcloud_layout.addWidget(self.bg_color, 2, 2, 1, 3)
 
         self.custom_bg_color_button = QPushButton("Custom", self)
@@ -508,16 +522,32 @@ class MainClass(QMainWindow):
 
         self.title_entry = QLineEdit(self)
         self.title_entry.setPlaceholderText("Enter title (optional)")
+        self.title_entry.setToolTip(
+            "Enter a title for your word cloud (optional).\n"
+            "This title will be displayed above the word cloud.\n"
+            "Leave blank if no title is needed."
+        )        
         wordcloud_layout.addWidget(self.title_entry, 3, 2, 1, 2)
 
         self.title_font_size = QSpinBox(self)
         self.title_font_size.setRange(8, 72)
         self.title_font_size.setValue(14)
+        self.title_font_size.setToolTip(
+            "Set the font size for the word cloud title.\n"
+            "Larger values make the title more prominent.\n"
+            "Recommended: 14-24 px for a balanced look.\n"
+            "Too large titles may overlap with the word cloud."
+        )        
         wordcloud_layout.addWidget(self.title_font_size, 3, 4, 1, 1)
 
         self.title_position = QComboBox(self)
         self.title_position.addItems(["Left", "Center", "Right"])
         self.title_position.setCurrentText("Center")
+        self.title_position.setToolTip(
+            "Choose where to display the title relative to the word cloud.\n"
+            "Positioning affects the overall layout and readability.\n"
+            "Recomended: Center"
+        )        
         wordcloud_layout.addWidget(self.title_position, 3, 5, 1, 1)
 
         self.font_choice_label = QLabel("Font Choice:", self)
@@ -525,6 +555,11 @@ class MainClass(QMainWindow):
 
         self.font_choice = QComboBox(self)
         self.font_choice.addItem("Default")
+        self.font_choice.setToolTip(
+            "Choose a font style for the word cloud.\n"
+            "Different fonts affect readability and aesthetics.\n"
+            "Sans-serif fonts are recommended for clarity."
+        )        
         wordcloud_layout.addWidget(self.font_choice, 4, 2, 1, 4)
         QTimer.singleShot(100, self.load_matplotlib_fonts)
 
@@ -533,6 +568,11 @@ class MainClass(QMainWindow):
 
         self.min_font_size_input = QSpinBox(self)
         self.min_font_size_input.setValue(11)
+        self.min_font_size_input.setToolTip(
+            "Set the smallest font size for words in the word cloud.\n"
+            "Prevents low-frequency words from becoming too small to read.\n"
+            "Recommended value: 10-12 px for readability."
+        )        
         wordcloud_layout.addWidget(self.min_font_size_input, 5, 2, 1, 1)
 
         self.max_words_label = QLabel("Maximum Words:", self)
@@ -541,6 +581,11 @@ class MainClass(QMainWindow):
         self.max_words_input = QSpinBox(self)
         self.max_words_input.setMaximum(10000)
         self.max_words_input.setValue(200)
+        self.max_words_input.setToolTip(
+            "Set the maximum number of words displayed in the word cloud.\n"
+            "Higher values provide more detail but may reduce clarity.\n"
+            "Recommended: 100-200 words for balanced visualization"
+        )        
         wordcloud_layout.addWidget(self.max_words_input, 5, 5, 1, 1)
 
         self.mask_label = QLabel("Mask Image:", self)
@@ -552,10 +597,20 @@ class MainClass(QMainWindow):
 
         self.mask_button = QPushButton("Load Mask Image", self)
         self.mask_button.clicked.connect(self.choose_mask)
+        self.mask_button.setToolTip(
+            "Upload an image to shape the word cloud (PNG/JPG/BMP).\n"
+            "White areas will be ignored, and words will fill the dark areas.\n"
+            "Use simple shapes for best results."
+        )        
         wordcloud_layout.addWidget(self.mask_button, 7, 2, 1, 2)
 
         self.reset_mask_button = QPushButton("Remove Mask Image", self)
         self.reset_mask_button.clicked.connect(self.reset_mask)
+        self.reset_mask_button.setToolTip(
+            "Remove the selected mask image and revert to the default shape.\n"
+            "The word cloud will be displayed in a rectangular format.\n"
+            "Use this if you no longer want a custom shape for the word cloud."
+        )        
         wordcloud_layout.addWidget(self.reset_mask_button, 7, 4, 1, 2)
 
         self.generate_wordcloud_button = QPushButton("Generate Word Cloud", self)
@@ -587,6 +642,11 @@ class MainClass(QMainWindow):
             "TextBlob", "TextBlob (Custom Lexicon)", "VADER", "VADER (Custom Lexicon)", 
             "Flair", "Flair (Custom Model)"
         ])
+        self.sentiment_mode_combo.setToolTip(
+            "TextBlob (Best for formal texts like news articles and reports.)\n"
+            "VADER (Best for social media, tweets, and informal texts with slang/emojis.)\n"
+            "Flair (Best for long-form content and complex sentiment analysis using deep learning.)"
+        )
         self.sentiment_mode_combo.currentTextChanged.connect(self.change_sentiment_mode)
         sentiment_layout.addWidget(self.sentiment_mode_combo, 0, 2, 1, 3)
 
@@ -982,7 +1042,7 @@ class MainClass(QMainWindow):
             plt.close('all')
 
             temp_dir = Path(tempfile.gettempdir()) / "wcgen_cache"
-            if temp_dir.exists():
+            if (temp_dir.exists()):
                 shutil.rmtree(temp_dir, ignore_errors=True)
 
         except Exception as e:
@@ -1013,28 +1073,55 @@ class MainClass(QMainWindow):
         dialog.setLayout(layout)
         dialog.show()
 
+    # def open_file(self):
+    #     options = QFileDialog.Options()
+    #     file_path, _ = QFileDialog.getOpenFileName(
+    #         self, "Load Text File", "", "Supported Files (*.txt *.pdf *.doc *.docx *.csv *.xlsx *.xls);;All Files (*)", options=options
+    #     )
+    #     if not file_path:
+    #         return
+
+    #     self.set_progress('file')
+    
+    #     try:
+    #         self.file_loader_thread = FileLoaderThread(file_path)
+    #         self.file_loader_thread.file_loaded.connect(self.on_file_loaded)
+    #         self.file_loader_thread.file_error.connect(self.handle_file_error)
+
+    #         self.thread_manager.add_thread(self.file_loader_thread)
+
+    #         self.file_loader_thread.start()
+
+    #     except Exception as e:
+    #         self.unified_progress_bar.setVisible(False)
+    #         QMessageBox.critical(self, "Error", f"Failed to load file: {e}")
+
     def open_file(self):
-        options = QFileDialog.Options()
-        file_path, _ = QFileDialog.getOpenFileName(
-            self, "Load Text File", "", "Supported Files (*.txt *.pdf *.doc *.docx *.csv *.xlsx *.xls);;All Files (*)", options=options
-        )
-        if not file_path:
-            return
+        dialog = QFileDialog(self)
+        dialog.setWindowTitle("Load Text File")
+        dialog.setNameFilter("Supported Files (*.txt *.pdf *.doc *.docx *.csv *.xlsx *.xls);;All Files (*)")
+        dialog.setOptions(QFileDialog.Options())
+        dialog.setContextMenuPolicy(Qt.NoContextMenu)  # Menonaktifkan context menu
 
-        self.set_progress('file')
+        if dialog.exec_():
+            file_path = dialog.selectedFiles()[0]
+            if not file_path:
+                return
 
-        try:
-            self.file_loader_thread = FileLoaderThread(file_path)
-            self.file_loader_thread.file_loaded.connect(self.on_file_loaded)
-            self.file_loader_thread.file_error.connect(self.handle_file_error)
+            self.set_progress('file')
 
-            self.thread_manager.add_thread(self.file_loader_thread)
+            try:
+                self.file_loader_thread = FileLoaderThread(file_path)
+                self.file_loader_thread.file_loaded.connect(self.on_file_loaded)
+                self.file_loader_thread.file_error.connect(self.handle_file_error)
 
-            self.file_loader_thread.start()
+                self.thread_manager.add_thread(self.file_loader_thread)
 
-        except Exception as e:
-            self.unified_progress_bar.setVisible(False)
-            QMessageBox.critical(self, "Error", f"Failed to load file: {e}")
+                self.file_loader_thread.start()
+
+            except Exception as e:
+                self.unified_progress_bar.setVisible(False)
+                QMessageBox.critical(self, "Error", f"Failed to load file: {e}")
 
     def handle_file_error(self, error_message):
         self.unified_progress_bar.setVisible(False)
@@ -1167,6 +1254,9 @@ class MainClass(QMainWindow):
             self.stats_dialog.setLayout(layout)
             self.stats_dialog.finished.connect(lambda: self.button_manager.restore_states())
             self.stats_dialog.show()
+            
+            # Ensure buttons are enabled after dialog is opened
+            self.button_manager.restore_states()
             
         except Exception as e:
             QMessageBox.critical(self, "Error", f"Failed to generate text analysis: {e}")
@@ -1379,8 +1469,6 @@ class MainClass(QMainWindow):
         if not self.text_data:
             QMessageBox.critical(self, "Error", "No text data available to display.")
             return
-
-        self.button_manager.disable_other_buttons('view_fulltext_button')
         
         try:
             if hasattr(self, "text_dialog") and self.text_dialog is not None:
@@ -1405,12 +1493,10 @@ class MainClass(QMainWindow):
             layout.addWidget(close_button)
 
             self.text_dialog.setLayout(layout)
-            self.text_dialog.finished.connect(lambda: self.button_manager.restore_states())
             self.text_dialog.show()
             
         except Exception as e:
             QMessageBox.critical(self, "Error", f"Failed to display text: {e}")
-            self.button_manager.restore_states()
 
     def handle_offline_warning(self, msg):
         self.unified_progress_bar.setVisible(False)
@@ -1422,56 +1508,6 @@ class MainClass(QMainWindow):
         QMessageBox.warning(self, "Translation Error", error_msg)
         self.enable_buttons()
 
-    # def on_sentiment_analyzed(self, result):
-    #     self.set_progress('model', False)
-    #     self.button_manager.restore_states()
-    #     dialog = QDialog(self)
-    #     dialog.setWindowTitle(f"Sentiment Analysis Results - {self.sentiment_mode}")
-    #     dialog.setMinimumSize(400, 270)
-
-    #     layout = QVBoxLayout()
-    #     text_browser = QTextBrowser()
-
-    #     score_type = ""
-    #     if self.sentiment_mode in ["VADER", "VADER (Custom Lexicon)"]:
-    #         score_type = "Compound Score"
-    #     elif self.sentiment_mode in ["TextBlob", "TextBlob (Custom Lexicon)"]:
-    #         score_type = "Polarity Score"
-    #     elif self.sentiment_mode in ["Flair", "Flair (Custom Model)"]:
-    #         score_type = "Confidence Score"
-
-    #     sentiment_result = f"""
-    #     <table border="1" cellspacing="0" cellpadding="2" width="100%">
-    #         <tr><th align="left">Metric</th><th align="left">Value</th></tr>
-    #         <tr><td>Analysis Mode</td><td>{self.sentiment_mode}</td></tr>
-    #         <tr><td>Sentiment Label</td><td><b>{result["sentiment_label"]}</b></td></tr>
-    #         <tr><td>Positive Sentiment</td><td>{result["positive_score"]:.2f}</td></tr>
-    #         <tr><td>Neutral Sentiment</td><td>{result["neutral_score"]:.2f}</td></tr>
-    #         <tr><td>Negative Sentiment</td><td>{result["negative_score"]:.2f}</td></tr>
-    #         <tr><td>{score_type}</td><td>{result["compound_score"]:.2f}</td></tr>
-    #     """
-
-    #     if self.sentiment_mode in ["TextBlob", "TextBlob (Custom Lexicon)"]:
-    #         try:
-    #             subj_value = float(result["subjectivity"])
-    #             sentiment_result += f'<tr><td>Subjectivity</td><td>{subj_value:.2f}</td></tr>'
-    #         except (ValueError, TypeError):
-    #             sentiment_result += f'<tr><td>Subjectivity</td><td>{result["subjectivity"]}</td></tr>'
-
-    #     sentiment_result += "</table>"
-
-    #     text_browser.setHtml(sentiment_result)
-    #     text_browser.setOpenExternalLinks(True)
-    #     text_browser.setReadOnly(True)
-    #     layout.addWidget(text_browser)
-
-    #     close_button = QPushButton("Close")
-    #     close_button.clicked.connect(dialog.accept)
-    #     layout.addWidget(close_button)
-
-    #     dialog.setLayout(layout)
-    #     dialog.show()
-
     def on_sentiment_analyzed(self, result):
         self.set_progress('model', False)
         self.button_manager.restore_states()
@@ -1479,6 +1515,7 @@ class MainClass(QMainWindow):
         dialog = QDialog(self)
         dialog.setWindowTitle(f"Sentiment Analysis Results - {self.sentiment_mode}")
         dialog.setMinimumSize(400, 350)  # Tambahkan tinggi untuk catatan
+        dialog.setSizeGripEnabled(True)
 
         layout = QVBoxLayout()
         text_browser = QTextBrowser()
@@ -1593,53 +1630,62 @@ class MainClass(QMainWindow):
         return [word for word, count in most_common]
 
     def change_sentiment_mode(self, mode):
+        """Handle sentiment mode changes with proper button states"""
         self.sentiment_mode = mode
         status_text = ""
         has_text = bool(self.text_data.strip())
 
-        self.custom_lexicon_button.setEnabled(mode == "VADER (Custom Lexicon)")
-        self.custom_model_button.setEnabled(mode == "Flair (Custom Model)")
+        # Reset button states
+        self.custom_lexicon_button.setEnabled(False)
+        self.custom_model_button.setEnabled(False)
+        self.sentiment_button.setEnabled(False)
 
         if mode == "Flair":
-            status_text = "Flair: Ready" if self.flair_classifier else "Loading..."
-            self.sentiment_button.setEnabled(bool(self.flair_classifier) and has_text)
-            self.custom_model_button.setEnabled(False)
-            if not self.flair_classifier:
+            if self.flair_classifier:
+                # Flair sudah dimuat
+                status_text = "Flair: Ready"
+                self.sentiment_button.setEnabled(has_text)
+            else:
+                # Flair belum dimuat
+                status_text = "Loading..."
                 self.load_flair_model()
 
         elif mode == "Flair (Custom Model)":
             if not self.flair_classifier:
-                self.custom_model_button.setEnabled(False)
+                # Flair belum dimuat sama sekali
                 self.load_flair_model()
                 status_text = "Initializing Flair environment..."
-                self.sentiment_button.setEnabled(False)
             else:
+                # Flair sudah dimuat
                 self.custom_model_button.setEnabled(True)
-                if self.flair_classifier_cuslang:
+                if self.flair_classifier_cuslang:  
                     status_text = "Ready"
                     self.sentiment_button.setEnabled(has_text)
                 else:
                     status_text = "Load custom model first!"
-                    self.sentiment_button.setEnabled(False)
 
         elif mode == "VADER (Custom Lexicon)":
-            status_text = "Load custom lexicon first!" if not self.custom_lexicon_path else "Ready"
             self.custom_lexicon_button.setEnabled(True)
+            status_text = "Load custom lexicon first!" if not self.custom_lexicon_path else "Ready"
             self.sentiment_button.setEnabled(has_text and bool(self.custom_lexicon_path))
             if not self.custom_lexicon_path:
                 QMessageBox.warning(
-                    self, "Lexicon Required", "You have selected 'VADER (Custom Lexicon)'. Please load a custom lexicon before analyzing sentiment."
+                    self, "Lexicon Required", 
+                    "Please load a custom lexicon before analyzing sentiment."
                 )
 
         elif mode == "TextBlob (Custom Lexicon)":
-            status_text = "Load custom lexicon first!" if not self.custom_textblob_lexicon_path else "Ready"
             self.custom_lexicon_button.setEnabled(True)
+            status_text = "Load custom lexicon first!" if not self.custom_textblob_lexicon_path else "Ready"
             self.sentiment_button.setEnabled(has_text and bool(self.custom_textblob_lexicon_path))
             if not self.custom_textblob_lexicon_path:
                 QMessageBox.warning(
-                    self, "Lexicon Required", "You have selected 'TextBlob (Custom Lexicon)'. Please load a custom lexicon before analyzing sentiment."
+                    self, "Lexicon Required", 
+                    "Please load a custom lexicon before analyzing sentiment."
                 )
+
         else:
+            # Untuk mode TextBlob dan VADER default
             status_text = "Ready" if has_text else "Load text first!"
             self.sentiment_button.setEnabled(has_text)
 
@@ -1728,12 +1774,13 @@ class MainClass(QMainWindow):
                 QMessageBox.critical(self, "Error", f"Failed to start model loading: {str(e)}")
 
     def on_model_loaded(self, result, success):
+        """Handle when custom Flair model is loaded"""
         self.unified_progress_bar.setVisible(False)
-        self.button_manager.restore_states()
         self.custom_model_button.setText("Load Model")
         
         try:
             if success:
+                # Validasi model
                 from flair.models import TextClassifier
                 from flair.data import Sentence
 
@@ -1750,11 +1797,28 @@ class MainClass(QMainWindow):
                 if label not in ['POSITIVE', 'NEGATIVE', 'NEUTRAL']:
                     raise ValueError(f"Model produces incompatible labels: {label}")
 
+                # Set model dan notifikasi
                 self.flair_classifier_cuslang = result
                 QMessageBox.information(self, "Success", "Custom model loaded successfully!")
                 
+                # Restore semua state tombol sebelumnya dan aktifkan tombol yang perlu
+                self.button_manager.restore_states()
                 has_text = bool(self.text_data.strip())
-                self.sentiment_button.setEnabled(has_text)
+                
+                # Aktifkan tombol-tombol yang bergantung pada teks
+                if has_text:
+                    self.sentiment_button.setEnabled(True)
+                    self.view_fulltext_button.setEnabled(True)
+                    self.summarize_button.setEnabled(True)
+                    self.text_stats_button.setEnabled(True)
+                    if hasattr(self, 'topic_tab'):
+                        if hasattr(self.topic_tab, 'analyze_topics_btn'):
+                            self.topic_tab.analyze_topics_btn.setEnabled(True)
+                        if hasattr(self.topic_tab, 'extract_keywords_btn'):
+                            self.topic_tab.extract_keywords_btn.setEnabled(True)
+                
+                # Pastikan tombol load model tetap aktif
+                self.custom_model_button.setEnabled(True)
                 
             else:
                 raise ValueError(str(result))
@@ -1763,6 +1827,10 @@ class MainClass(QMainWindow):
             self.flair_classifier_cuslang = None
             QMessageBox.critical(self, "Error", f"Failed to load custom model: {str(e)}")
             self.sentiment_button.setEnabled(False)
+            # Restore state tombol lainnya
+            self.button_manager.restore_states()
+            # Pastikan tombol load model tetap aktif untuk retry
+            self.custom_model_button.setEnabled(True)
 
     def load_flair_model(self):
         
@@ -1787,25 +1855,33 @@ class MainClass(QMainWindow):
             QMessageBox.critical(self, "Error", f"Failed to load Flair: {str(e)}")
 
     def on_flair_model_loaded(self, model):
+        """Handle when default Flair model is loaded"""
         self.unified_progress_bar.setVisible(False)
         self.button_manager.restore_states()
         self.sentiment_button.setText("Analyze Sentiment")
         
         if model:
             self.flair_classifier = model
+            has_text = bool(self.text_data.strip())
             
             if self.flair_first_load:
                 self.flair_first_load = False
                 QMessageBox.information(self, "Ready", "Flair library loaded successfully!")
 
-            if self.sentiment_mode == "Flair (Custom Model)":
-                self.custom_model_button.setEnabled(True)
-                if not self.flair_classifier_cuslang:
-                    self.sentiment_button.setEnabled(False)
-                    QMessageBox.information(self, "Next Step", "Please load your custom model")
-            else:
-                has_text = bool(self.text_data.strip())
+            if self.sentiment_mode == "Flair":
+                # Aktifkan tombol sentiment jika ada teks
                 self.sentiment_button.setEnabled(has_text)
+                
+            elif self.sentiment_mode == "Flair (Custom Model)":
+                # Aktifkan tombol load model
+                self.custom_model_button.setEnabled(True)
+                if self.flair_classifier_cuslang:
+                    # Jika custom model sudah dimuat, aktifkan sentiment button jika ada teks
+                    self.sentiment_button.setEnabled(has_text)
+                else:
+                    QMessageBox.information(self, "Next Step", "Please load your custom model")
+                    self.sentiment_button.setEnabled(False)
+            
         else:
             self.sentiment_button.setEnabled(False)
             QMessageBox.critical(self, "Error", "Failed to load Flair model")
@@ -1887,7 +1963,7 @@ class MainClass(QMainWindow):
             'strip_accents': 'unicode',
             'max_features': 1000,
             'min_df': 1,
-            'max_df': 0.95
+            'max_df': 1 #0.95
         }
         
         self.vectorizer = CountVectorizer(**vectorizer_config)
@@ -1904,7 +1980,7 @@ class MainClass(QMainWindow):
             lowercase=True,
             strip_accents='unicode',
             min_df=1,
-            max_df=0.95
+            max_df=1  # Diubah dari 0.95 menjadi 1 untuk konsistensi dengan LDA/NMF
         )
         
         try:
@@ -1935,6 +2011,13 @@ class MainClass(QMainWindow):
             vectorizer = self.vectorizer if model_type == 'lda' else self.tfidf
             dtm = vectorizer.fit_transform(sentences)
             
+            # Tambahkan pengecekan khusus untuk NMF
+            if model_type == 'nmf':
+                max_possible_topics = min(dtm.shape[0], dtm.shape[1])
+                if num_topics > max_possible_topics:
+                    raise ValueError(f"Number of topics ({num_topics}) cannot exceed {max_possible_topics} for NMF with this dataset")
+            
+            # Pengecekan umum untuk kedua model
             num_topics = min(num_topics, max(2, dtm.shape[1] - 1))
             
             model_class = LatentDirichletAllocation if model_type == 'lda' else NMF
@@ -1962,7 +2045,7 @@ class MainClass(QMainWindow):
             
         except Exception as e:
             print(f"{model_type.upper()} Analysis error: {str(e)}")
-            raise ValueError("Not enough unique terms for topic analysis")
+            raise ValueError(f"Topic analysis failed: {str(e)}")
 
     def analyze_topics_lda(self, text, num_topics=5):
         """LDA topic analysis wrapper"""
@@ -2090,6 +2173,7 @@ class MainClass(QMainWindow):
         dialog = QDialog(self)
         dialog.setWindowTitle("Text Summary")
         dialog.setMinimumSize(500, 300)
+        dialog.setSizeGripEnabled(True)
         layout = QVBoxLayout()
 
         text_browser = QTextBrowser()
@@ -2480,11 +2564,15 @@ class TopicAnalysisTab(QWidget):
         topic_layout.addWidget(QLabel("Method:"), 0, 0)
         self.topic_method = QComboBox()
         self.topic_method.addItems(['LDA', 'NMF'])
+        self.topic_method.setToolTip(
+            "LDA (For discovering topics in large text corpora)\n"
+            "NMF (For extracting hidden topics using non-negative features)"
+        )
         topic_layout.addWidget(self.topic_method, 0, 1)
         
         topic_layout.addWidget(QLabel("Number of Topics:"), 1, 0)
         self.num_topics = QSpinBox()
-        self.num_topics.setRange(2, 20)
+        self.num_topics.setRange(1, 20)
         self.num_topics.setValue(5)
         topic_layout.addWidget(self.num_topics, 1, 1)
         
@@ -2502,6 +2590,11 @@ class TopicAnalysisTab(QWidget):
         keyword_layout.addWidget(QLabel("Method:"), 0, 0)
         self.keyword_method = QComboBox()
         self.keyword_method.addItems(['TF-IDF', 'YAKE', 'RAKE'])
+        self.keyword_method.setToolTip(
+            "TF-IDF (For identifying important words based on frequency)\n"
+            "RAKE (For extracting keywords from short texts)\n"
+            "YAKE (For extracting context-based keywords from documents)"            
+        )
         keyword_layout.addWidget(self.keyword_method, 0, 1)
         
         keyword_layout.addWidget(QLabel("Number of Keywords:"), 1, 0)
@@ -2619,6 +2712,7 @@ class TopicAnalysisTab(QWidget):
 
         dialog = QDialog(self)
         dialog.setWindowTitle(f"{method} Topic Results") 
+        dialog.setSizeGripEnabled(True)
         self.setup_results_dialog(dialog, result_html)
         
     def show_keyword_dialog(self, method, keywords):
@@ -2631,6 +2725,7 @@ class TopicAnalysisTab(QWidget):
             
         dialog = QDialog(self)
         dialog.setWindowTitle(f"{method.upper()} Keywords")
+        dialog.setSizeGripEnabled(True)
         self.setup_results_dialog(dialog, result_html)
 
     def setup_results_dialog(self, dialog, html_content):
@@ -2699,7 +2794,9 @@ class ButtonStateManager:
             'extract_keywords_btn',
             'view_fulltext_button',
             'text_stats_button',
-            'save_wc_button'
+            'save_wc_button',
+            'summarize_button',
+            'load_file_button',
         ]
         
     def save_states(self):
@@ -3357,7 +3454,6 @@ class SummarizeThread(QThread):
 
 # Main entry point
 if __name__ == "__main__":
-    QGuiApplication.setHighDpiScaleFactorRoundingPolicy(Qt.HighDpiScaleFactorRoundingPolicy.PassThrough)
     app = QApplication(sys.argv)
     loop = QEventLoop(app)
     asyncio.set_event_loop(loop)

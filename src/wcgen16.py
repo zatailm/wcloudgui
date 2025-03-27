@@ -60,9 +60,9 @@ else:
 
 ICON_PATH = APP_DIR / "icon.ico"
 
-ABOUT_TEXT = "PGgyPvCfjJ8gV0NHZW4gLSBXb3JkIENsb3VkIEdlbmVyYXRvciArIFNlbnRpbWVudCBBbmFseXNpczwvaDI+CjxwPjxiPlZlcnNpb246PC9iPiAxLjU8L3A+CjxwPiZjb3B5OyAyMDI1IE0uIEFkaWIgWmF0YSBJbG1hbTwvcD4KPHA+PGEgaHJlZj0iaHR0cHM6Ly9naXRodWIuY29tL3phdGFpbG0vd2Nsb3VkZ3VpIj7wn5OMIEdpdEh1YiBSZXBvc2l0b3J5PC9hPjwvcD4KPGgzPvCflI0gV2hhdCBpcyBXQ0dlbj88L2gzPgo8cD5XQ0dlbiBpcyBhbiBhZHZhbmNlZCB5ZXQgZWFzeS10by11c2UgYXBwbGljYXRpb24gZGVzaWduZWQgZm9yIGNyZWF0aW5nIHZpc3VhbGx5IGFwcGVhbGluZyB3b3JkIGNsb3VkcyBmcm9tIHRleHQgZGF0YS48L3A+CjxoMz7wn5qAIEtleSBGZWF0dXJlczwvaDM+Cjx1bD4KICAgIDxsaT48Yj5TdXBwb3J0cyBtdWx0aXBsZSBmaWxlIGZvcm1hdHM6PC9iPiBUWFQsIFBERiwgRE9DL0RPQ1gsIENTViwgWExTWDwvbGk+CiAgICA8bGk+PGI+RnVsbHkgY3VzdG9taXphYmxlIHdvcmQgY2xvdWRzOjwvYj4gQ2hvb3NlIGNvbG9ycywgZm9udHMsIHNoYXBlcywgYW5kIHRoZW1lczwvbGk+CiAgICA8bGk+PGI+U3RvcHdvcmQgZmlsdGVyaW5nOjwvYj4gUmVtb3ZlIGNvbW1vbiB3b3JkcyBmb3IgY2xlYXJlciBpbnNpZ2h0czwvbGk+CiAgICA8bGk+PGI+U21hcnQgdGV4dCBwcm9jZXNzaW5nOjwvYj4gSGFuZGxlcyBsYXJnZSBkYXRhc2V0cyBlZmZpY2llbnRseTwvbGk+CiAgICA8bGk+PGI+RXhwb3J0ICYgc2F2ZSBvcHRpb25zOjwvYj4gSGlnaC1yZXNvbHV0aW9uIGltYWdlIHNhdmluZyBpbiBtdWx0aXBsZSBmb3JtYXRzPC9saT4KICAgIDxsaT48Yj5TZW50aW1lbnQgYW5hbHlzaXM6PC9iPiBPcHRpb25hbCBhbmFseXNpcyB1c2luZyBUZXh0QmxvYiwgVkFERVIsIGFuZCBGbGFpcjwvbGk+CjwvdWw+CjxoMz7wn5OWIEhvdyBXQ0dlbiBIZWxwcyBZb3U8L2gzPgo8cD5XaGV0aGVyIHlvdeKAmXJlIGFuYWx5emluZyBjdXN0b21lciBmZWVkYmFjaywgY29uZHVjdGluZyBhY2FkZW1pYyByZXNlYXJjaCwgb3IgdmlzdWFsaXppbmcgdGV4dC1iYXNlZCBpbnNpZ2h0czwgV0NHZW4gc2ltcGxpZmllcyB0aGUgcHJvY2VzcyBhbmQgZW5oYW5jZXMgeW91ciB3b3JrZmxvdyB3aXRoIGl0cyBpbnR1aXRpdmUgZGVzaWduIGFuZCBwb3dlcmZ1bCBmZWF0dXJlcy48L3A+CjxoMz7wn5OcIExpY2Vuc2U8L2gzPgo8cD5XQ0dlbiBpcyBmcmVlIGZvciBwZXJzb25hbCBhbmQgZWR1Y2F0aW9uYWwgdXNlLiBGb3IgY29tbWVyY2lhbCBhcHBsaWNhdGlvbnMsIHBsZWFzZSByZWZlciB0byB0aGUgbGljZW5zaW5nIHRlcm1zLjwvcD4KPGgzPvCfk5ogSG93IHRvIENpdGUgV0NHZW48L2gzPgo8cD5JZiB5b3UgdXNlIFdDR2VuIGluIHlvdXIgcmVzZWFyY2ggb3IgcHVibGljYXRpb24sIHBsZWFzZSBjaXRlIGl0IGFzIGZvbGxvd3MgKEFQQSA3KTo8L3A+CjxwPklsbWFtLCBNLiBBLiBBLiAoMjAyNSkuIDxpPldDR2VuIC0gV29yZCBDbG91ZCBHZW5lcmF0b3IgKyBTZW50aW1lbnQgQW5hbHlzaXM8L2k+IChWZXJzaW9uIDEuNSkgW1NvZnR3YXJlXS4gWmVub2RvLiA8YSBocmVmPSJodHRwczovL2RvaS5vcmcvMTAuNTI4MS96ZW5vZG8uMTUwMzQ4NDMiPmh0dHBzOi8vZG9pLm9yZy8xMC41MjgxL3plbm9kby4xNDkzMjY1MDwvYT48L3A+Cg=="
+ABOUT_TEXT = "PGgyPlRleHRwbG9yYSAoZm9ybWVybHkgV0NHZW4pPC9oMj4KPHA+PGI+VmVyc2lvbjo8L2I+IDEuNTwvcD4KPHA+JmNvcHk7IDIwMjUgTS4gQWRpYiBaYXRhIElsbWFtPC9wPgo8cD48YSBocmVmPSJodHRwczovL2dpdGh1Yi5jb20vemF0YWlsbS93Y2xvdWRndWkiPkdpdEh1YiBSZXBvc2l0b3J5PC9hPjwvcD4KPGgzPldoYXQgaXMgVGV4dHBsb3JhPzwvaDM+CjxwPlRleHRwbG9yYSBpcyBhbiBhZHZhbmNlZCB5ZXQgZWFzeS10by11c2UgYXBwbGljYXRpb24gZGVzaWduZWQgZm9yIGNyZWF0aW5nIHZpc3VhbGx5IGFwcGVhbGluZyB3b3JkIGNsb3VkcyBmcm9tIHRleHQgZGF0YS48L3A+CjxoMz5LZXkgRmVhdHVyZXM8L2gzPgo8dWw+CiAgICA8bGk+PGI+U3VwcG9ydHMgbXVsdGlwbGUgZmlsZSBmb3JtYXRzOjwvYj4gVFhULCBQREYsIERPQy9ET0NYLCBDU1YsIFhMU1g8L2xpPgogICAgPGxpPjxiPkZ1bGx5IGN1c3RvbWl6YWJsZSB3b3JkIGNsb3Vkczo8L2I+IENob29zZSBjb2xvcnMsIGZvbnRzLCBzaGFwZXMsIGFuZCB0aGVtZXM8L2xpPgogICAgPGxpPjxiPlN0b3B3b3JkIGZpbHRlcmluZzo8L2I+IFJlbW92ZSBjb21tb24gd29yZHMgZm9yIGNsZWFyZXIgaW5zaWdodHM8L2xpPgogICAgPGxpPjxiPlNtYXJ0IHRleHQgcHJvY2Vzc2luZzo8L2I+IEhhbmRsZXMgbGFyZ2UgZGF0YXNldHMgZWZmaWNpZW50bHk8L2xpPgogICAgPGxpPjxiPkV4cG9ydCAmIHNhdmUgb3B0aW9uczo8L2I+IEhpZ2gtcmVzb2x1dGlvbiBpbWFnZSBzYXZpbmcgaW4gbXVsdGlwbGUgZm9ybWF0czwvbGk+CiAgICA8bGk+PGI+U2VudGltZW50IGFuYWx5c2lzOjwvYj4gT3B0aW9uYWwgYW5hbHlzaXMgdXNpbmcgVGV4dEJsb2IsIFZBREVSLCBhbmQgRmxhaXI8L2xpPgo8L3VsPgo8aDM+SG93IFRleHRwbG9yYSBIZWxwcyBZb3U8L2gzPgo8cD5XaGV0aGVyIHlvdeKAmXJlIGFuYWx5emluZyBjdXN0b21lciBmZWVkYmFjaywgY29uZHVjdGluZyBhY2FkZW1pYyByZXNlYXJjaCwgb3IgdmlzdWFsaXppbmcgdGV4dC1iYXNlZCBpbnNpZ2h0czwgVGV4dHBsb3JhIHNpbXBsaWZpZXMgdGhlIHByb2Nlc3MgYW5kIGVuaGFuY2VzIHlvdXIgd29ya2Zsb3cgd2l0aCBpdHMgaW50dWl0aXZlIGRlc2lnbiBhbmQgcG93ZXJmdWwgZmVhdHVyZXMuPC9wPgo8aDM+TGljZW5zZTwvaDM+CjxwPlRleHRwbG9yYSBpcyBmcmVlIGZvciBwZXJzb25hbCBhbmQgZWR1Y2F0aW9uYWwgdXNlLiBGb3IgY29tbWVyY2lhbCBhcHBsaWNhdGlvbnMsIHBsZWFzZSByZWZlciB0byB0aGUgbGljZW5zaW5nIHRlcm1zLjwvcD4KPGgzPkhvdyB0byBDaXRlIFRleHRwbG9yYTwvaDM+CjxwPklmIHlvdSB1c2UgVGV4dHBsb3JhIGluIHlvdXIgcmVzZWFyY2ggb3IgcHVibGljYXRpb24sIHBsZWFzZSBjaXRlIGl0IGFzIGZvbGxvd3MgKEFQQSA3KTo8L3A+CjxwPklsbWFtLCBNLiBBLiBaLiAoMjAyNSkuIDxpPlRleHRwbG9yYTwvaT4gKFZlcnNpb24gMS41KSBbU29mdHdhcmVdLiBaZW5vZG8uIDxhIGhyZWY9Imh0dHBzOi8vZG9pLm9yZy8xMC41MjgxL3plbm9kby4xNTAzNDg0MyI+aHR0cHM6Ly9kb2kub3JnLzEwLjUyODEvemVub2RvLjE0OTMyNjUwPC9hPjwvcD4K"
 
-MODE_INFO = "PGgyPlNlbnRpbWVudCBBbmFseXNpcyBNb2RlczwvaDI+CjxwPlNlbGVjdCB0aGUgbW9zdCBzdWl0YWJsZSBzZW50aW1lbnQgYW5hbHlzaXMgbWV0aG9kIGJhc2VkIG9uIHlvdXIgdGV4dCB0eXBlIGFuZCBhbmFseXNpcyBuZWVkcy48L3A+CjxoMz7wn5OdIFRleHRCbG9iPC9oMz4KPHA+PGI+QmVzdCBmb3I6PC9iPiBGb3JtYWwgdGV4dHMsIHdlbGwtc3RydWN0dXJlZCBkb2N1bWVudHMsIG5ld3MgYXJ0aWNsZXMsIHJlc2VhcmNoIHBhcGVycywgYW5kIHJlcG9ydHMuPC9wPgo8cD5UZXh0QmxvYiBpcyBhIGxleGljb24tYmFzZWQgc2VudGltZW50IGFuYWx5c2lzIHRvb2wgdGhhdCBwcm92aWRlcyBhIHNpbXBsZSB5ZXQgZWZmZWN0aXZlIGFwcHJvYWNoIGZvciBldmFsdWF0aW5nIHRoZSBzZW50aW1lbnQgb2Ygc3RydWN0dXJlZCB0ZXh0LiBJdCBhc3NpZ25zIGEgcG9sYXJpdHkgc2NvcmUgKHBvc2l0aXZlLCBuZWdhdGl2ZSwgb3IgbmV1dHJhbCkgYW5kIGNhbiBhbHNvIGFuYWx5emUgc3ViamVjdGl2aXR5IGxldmVscy48L3A+CjxoMz7wn5KsIFZBREVSIChWYWxlbmNlIEF3YXJlIERpY3Rpb25hcnkgYW5kIHNFbnRpbWVudCBSZWFzb25lcik8L2gzPgo8cD48Yj5CZXN0IGZvcjo8L2I+IFNvY2lhbCBtZWRpYSBwb3N0cywgdHdlZXRzLCBzaG9ydCBjb21tZW50cywgY2hhdCBtZXNzYWdlcywgYW5kIGluZm9ybWFsIHJldmlld3MuPC9wPgo8cD5WQURFUiBpcyBzcGVjaWZpY2FsbHkgZGVzaWduZWQgZm9yIGFuYWx5emluZyBzaG9ydCwgaW5mb3JtYWwgdGV4dHMgdGhhdCBvZnRlbiBjb250YWluIHNsYW5nLCBlbW9qaXMsIGFuZCBwdW5jdHVhdGlvbi1iYXNlZCBlbW90aW9ucy4gSXQgaXMgYSBydWxlLWJhc2VkIHNlbnRpbWVudCBhbmFseXNpcyBtb2RlbCB0aGF0IGVmZmljaWVudGx5IGRldGVybWluZXMgc2VudGltZW50IGludGVuc2l0eSBhbmQgd29ya3MgZXhjZXB0aW9uYWxseSB3ZWxsIGZvciByZWFsLXRpbWUgYXBwbGljYXRpb25zLjwvcD4KPGgzPvCflKwgRmxhaXI8L2gzPgo8cD48Yj5CZXN0IGZvcjo8L2I+IExvbmctZm9ybSBjb250ZW50LCBwcm9kdWN0IHJldmlld3MsIHByb2Zlc3Npb25hbCBkb2N1bWVudHMsIGFuZCBBSS1iYXNlZCBkZWVwIHNlbnRpbWVudCBhbmFseXNpcy48L3A+CjxwPkZsYWlyIHV0aWxpemVzIGRlZXAgbGVhcm5pbmcgdGVjaG5pcXVlcyBmb3Igc2VudGltZW50IGFuYWx5c2lzLCBtYWtpbmcgaXQgaGlnaGx5IGFjY3VyYXRlIGZvciBjb21wbGV4IHRleHRzLiBJdCBpcyBpZGVhbCBmb3IgYW5hbHl6aW5nIGxhcmdlLXNjYWxlIHRleHR1YWwgZGF0YSwgY2FwdHVyaW5nIGNvbnRleHQgbW9yZSBlZmZlY3RpdmVseSB0aGFuIHRyYWRpdGlvbmFsIHJ1bGUtYmFzZWQgbW9kZWxzLiBIb3dldmVyLCBpdCByZXF1aXJlcyBtb3JlIGNvbXB1dGF0aW9uYWwgcmVzb3VyY2VzIGNvbXBhcmVkIHRvIFRleHRCbG9iIGFuZCBWQURFUi48L3A+CjxoMz7wn4yQIEltcG9ydGFudCBOb3RlIGZvciBMYW5ndWFnZSBTdXBwb3J0PC9oMz4KPHA+V2hpbGUgdGhpcyBhcHBsaWNhdGlvbiBzdXBwb3J0cyBub24tRW5nbGlzaCB0ZXh0IHRocm91Z2ggYXV0b21hdGljIHRyYW5zbGF0aW9uLCBpdCBpcyA8Yj5oaWdobHkgcmVjb21tZW5kZWQ8L2I+IHRvIHVzZSA8Yj5tYW51YWxseSB0cmFuc2xhdGVkIGFuZCByZWZpbmVkIEVuZ2xpc2ggdGV4dDwvYj4gZm9yIHRoZSBtb3N0IGFjY3VyYXRlIHNlbnRpbWVudCBhbmFseXNpcy4gVGhlIGJ1aWx0LWluIGF1dG9tYXRpYyB0cmFuc2xhdGlvbiBmZWF0dXJlIG1heSBub3QgYWx3YXlzIGZ1bmN0aW9uIGNvcnJlY3RseSwgbGVhZGluZyB0byBwb3RlbnRpYWwgbWlzaW50ZXJwcmV0YXRpb25zIG9yIGluYWNjdXJhdGUgc2VudGltZW50IHJlc3VsdHMuPC9wPgo8cD5Gb3IgdGhlIGJlc3QgcGVyZm9ybWFuY2UsIGVuc3VyZSB0aGF0IG5vbi1FbmdsaXNoIHRleHQgaXMgcHJvcGVybHkgcmV2aWV3ZWQgYW5kIGFkanVzdGVkIGJlZm9yZSBzZW50aW1lbnQgYW5hbHlzaXMuIPCfmoA8L3A+CjxoMz7wn5OMIEN1c3RvbSBMZXhpY29uIEZvcm1hdCBFeGFtcGxlPC9oMz4KPHA+QmVsb3cgaXMgYW4gZXhhbXBsZSBvZiBhIGN1c3RvbSBsZXhpY29uIGZvcm1hdCBmb3Igc2VudGltZW50IGFuYWx5c2lzOjwvcD4KPHByZSBzdHlsZT0nYmFja2dyb3VuZC1jb2xvcjojZjRmNGY0OyBwYWRkaW5nOjEwcHg7IGJvcmRlci1yYWRpdXM6NXB4Oyc+CmV4Y2VsbGVudCAgIDEuNQphd2Z1bCAgICAgIC0xLjUKbm90ICAgICAgICBuZWdhdGlvbiAgICAgICAgICMgTWFyayBhcyBuZWdhdGlvbiB3b3JkCmludGVuc2VseSAgaW50ZW5zaWZpZXI6MS43ICAjIEN1c3RvbSBpbnRlbnNpZmllciB3aXRoIG11bHRpcGxpZXIKPC9wcmU+CjxwPlRoaXMgY3VzdG9tIGxleGljb24gYWxsb3dzIGZpbmUtdHVuaW5nIG9mIHNlbnRpbWVudCBzY29yZXMgYnkgYWRkaW5nIGN1c3RvbSB3b3JkcywgbmVnYXRpb25zLCBhbmQgaW50ZW5zaWZpZXJzIHRvIGltcHJvdmUgc2VudGltZW50IGFuYWx5c2lzIGFjY3VyYWN5LjwvcD4K"
+MODE_INFO = "PGgyPlNlbnRpbWVudCBBbmFseXNpcyBNb2RlczwvaDI+CjxwPlNlbGVjdCB0aGUgbW9zdCBzdWl0YWJsZSBzZW50aW1lbnQgYW5hbHlzaXMgbWV0aG9kIGJhc2VkIG9uIHlvdXIgdGV4dCB0eXBlIGFuZCBhbmFseXNpcyBuZWVkcy48L3A+CjxoMz5UZXh0QmxvYjwvaDM+CjxwPjxiPkJlc3QgZm9yOjwvYj4gRm9ybWFsIHRleHRzLCB3ZWxsLXN0cnVjdHVyZWQgZG9jdW1lbnRzLCBuZXdzIGFydGljbGVzLCByZXNlYXJjaCBwYXBlcnMsIGFuZCByZXBvcnRzLjwvcD4KPHA+VGV4dEJsb2IgaXMgYSBsZXhpY29uLWJhc2VkIHNlbnRpbWVudCBhbmFseXNpcyB0b29sIHRoYXQgcHJvdmlkZXMgYSBzaW1wbGUgeWV0IGVmZmVjdGl2ZSBhcHByb2FjaCBmb3IgZXZhbHVhdGluZyB0aGUgc2VudGltZW50IG9mIHN0cnVjdHVyZWQgdGV4dC4gSXQgYXNzaWducyBhIHBvbGFyaXR5IHNjb3JlIChwb3NpdGl2ZSwgbmVnYXRpdmUsIG9yIG5ldXRyYWwpIGFuZCBjYW4gYWxzbyBhbmFseXplIHN1YmplY3Rpdml0eSBsZXZlbHMuPC9wPgo8aDM+VkFERVIgKFZhbGVuY2UgQXdhcmUgRGljdGlvbmFyeSBhbmQgc0VudGltZW50IFJlYXNvbmVyKTwvaDM+CjxwPjxiPkJlc3QgZm9yOjwvYj4gU29jaWFsIG1lZGlhIHBvc3RzLCB0d2VldHMsIHNob3J0IGNvbW1lbnRzLCBjaGF0IG1lc3NhZ2VzLCBhbmQgaW5mb3JtYWwgcmV2aWV3cy48L3A+CjxwPlZBREVSIGlzIHNwZWNpZmljYWxseSBkZXNpZ25lZCBmb3IgYW5hbHl6aW5nIHNob3J0LCBpbmZvcm1hbCB0ZXh0cyB0aGF0IG9mdGVuIGNvbnRhaW4gc2xhbmcsIGVtb2ppcywgYW5kIHB1bmN0dWF0aW9uLWJhc2VkIGVtb3Rpb25zLiBJdCBpcyBhIHJ1bGUtYmFzZWQgc2VudGltZW50IGFuYWx5c2lzIG1vZGVsIHRoYXQgZWZmaWNpZW50bHkgZGV0ZXJtaW5lcyBzZW50aW1lbnQgaW50ZW5zaXR5IGFuZCB3b3JrcyBleGNlcHRpb25hbGx5IHdlbGwgZm9yIHJlYWwtdGltZSBhcHBsaWNhdGlvbnMuPC9wPgo8aDM+RmxhaXI8L2gzPgo8cD48Yj5CZXN0IGZvcjo8L2I+IExvbmctZm9ybSBjb250ZW50LCBwcm9kdWN0IHJldmlld3MsIHByb2Zlc3Npb25hbCBkb2N1bWVudHMsIGFuZCBBSS1iYXNlZCBkZWVwIHNlbnRpbWVudCBhbmFseXNpcy48L3A+CjxwPkZsYWlyIHV0aWxpemVzIGRlZXAgbGVhcm5pbmcgdGVjaG5pcXVlcyBmb3Igc2VudGltZW50IGFuYWx5c2lzLCBtYWtpbmcgaXQgaGlnaGx5IGFjY3VyYXRlIGZvciBjb21wbGV4IHRleHRzLiBJdCBpcyBpZGVhbCBmb3IgYW5hbHl6aW5nIGxhcmdlLXNjYWxlIHRleHR1YWwgZGF0YSwgY2FwdHVyaW5nIGNvbnRleHQgbW9yZSBlZmZlY3RpdmVseSB0aGFuIHRyYWRpdGlvbmFsIHJ1bGUtYmFzZWQgbW9kZWxzLiBIb3dldmVyLCBpdCByZXF1aXJlcyBtb3JlIGNvbXB1dGF0aW9uYWwgcmVzb3VyY2VzIGNvbXBhcmVkIHRvIFRleHRCbG9iIGFuZCBWQURFUi48L3A+CjxoMz5JbXBvcnRhbnQgTm90ZSBmb3IgTGFuZ3VhZ2UgU3VwcG9ydDwvaDM+CjxwPldoaWxlIHRoaXMgYXBwbGljYXRpb24gc3VwcG9ydHMgbm9uLUVuZ2xpc2ggdGV4dCB0aHJvdWdoIGF1dG9tYXRpYyB0cmFuc2xhdGlvbiwgaXQgaXMgPGI+aGlnaGx5IHJlY29tbWVuZGVkPC9iPiB0byB1c2UgPGI+bWFudWFsbHkgdHJhbnNsYXRlZCBhbmQgcmVmaW5lZCBFbmdsaXNoIHRleHQ8L2I+IGZvciB0aGUgbW9zdCBhY2N1cmF0ZSBzZW50aW1lbnQgYW5hbHlzaXMuIFRoZSBidWlsdC1pbiBhdXRvbWF0aWMgdHJhbnNsYXRpb24gZmVhdHVyZSBtYXkgbm90IGFsd2F5cyBmdW5jdGlvbiBjb3JyZWN0bHksIGxlYWRpbmcgdG8gcG90ZW50aWFsIG1pc2ludGVycHJldGF0aW9ucyBvciBpbmFjY3VyYXRlIHNlbnRpbWVudCByZXN1bHRzLjwvcD4KPHA+Rm9yIHRoZSBiZXN0IHBlcmZvcm1hbmNlLCBlbnN1cmUgdGhhdCBub24tRW5nbGlzaCB0ZXh0IGlzIHByb3Blcmx5IHJldmlld2VkIGFuZCBhZGp1c3RlZCBiZWZvcmUgc2VudGltZW50IGFuYWx5c2lzLjwvcD4KPGgzPkN1c3RvbSBMZXhpY29uIEZvcm1hdCBFeGFtcGxlPC9oMz4KPHA+QmVsb3cgaXMgYW4gZXhhbXBsZSBvZiBhIGN1c3RvbSBsZXhpY29uIGZvcm1hdCBmb3Igc2VudGltZW50IGFuYWx5c2lzOjwvcD4KPHByZSBzdHlsZT0nYmFja2dyb3VuZC1jb2xvcjojZjRmNGY0OyBjb2xvcjogYmxhY2s7IHBhZGRpbmc6MTBweDsgYm9yZGVyLXJhZGl1czo1cHg7Jz4KZXhjZWxsZW50ICAgMS41CmF3ZnVsICAgICAgLTEuNQpub3QgICAgICAgIG5lZ2F0aW9uICAgICAgICAgIyBNYXJrIGFzIG5lZ2F0aW9uIHdvcmQKaW50ZW5zZWx5ICBpbnRlbnNpZmllcjoxLjcgICMgQ3VzdG9tIGludGVuc2lmaWVyIHdpdGggbXVsdGlwbGllcgo8L3ByZT4KPHA+VGhpcyBjdXN0b20gbGV4aWNvbiBhbGxvd3MgZmluZS10dW5pbmcgb2Ygc2VudGltZW50IHNjb3JlcyBieSBhZGRpbmcgY3VzdG9tIHdvcmRzLCBuZWdhdGlvbnMsIGFuZCBpbnRlbnNpZmllcnMgdG8gaW1wcm92ZSBzZW50aW1lbnQgYW5hbHlzaXMgYWNjdXJhY3kuPC9wPg=="
 
 SCORE_TYPES = {
     "VADER": "Compound Score",
@@ -115,7 +115,9 @@ def is_connected():
 class MainClass(QMainWindow):
     def __init__(self):
         super().__init__()
-        
+
+        self.user_name = os.getlogin()
+
         self.perf_monitor = PerformanceMonitor()
         
         self.active_threads = ThreadSafeSet()
@@ -356,9 +358,12 @@ class MainClass(QMainWindow):
         self.cleanup_timer.start(10000)
         
     def initUI(self):
-        WIN_TITLE = "V0NHZW4gKyBUZXh0IEFuYWx5dGljcyAodjEuNikK"
-        win_title = base64.b64decode(WIN_TITLE.encode()).decode()
-        self.setWindowTitle(win_title)
+        """Use this if not include user name :
+            # WIN_TITLE = f"V0NHZW4gKyBUZXh0IEFuYWx5dGljcyAodjEuNikK"
+            # win_title = base64.b64decode(WIN_TITLE.encode()).decode()
+        """
+        WIN_TITLE = base64.b64decode("VGV4dHBsb3JhICh2MS42KSBbe31d".encode()).decode().format(self.user_name)
+        self.setWindowTitle(WIN_TITLE)
         self.setFixedSize(550, 850)
 
         layout = QVBoxLayout()
@@ -704,12 +709,14 @@ class MainClass(QMainWindow):
             self.font_map = {}
 
             weight_conversion = {
-                100: "Thin", 200: "Extra Light", 300: "Light", 400: "Regular",
-                500: "Medium", 600: "Semi Bold", 700: "Bold", 800: "Extra Bold", 900: "Black",
+                100: "Thin", 150: "Extra Thin",  200: "Extra Light",  250: "Light Thin",  300: "Light", 350: "Book", 
+                400: "Regular",  450: "Text", 500: "Medium", 550: "Demi Medium", 600: "Semi Bold", 650: "Demi Bold", 
+                700: "Bold", 750: "Extra Bold Light", 800: "Extra Bold", 850: "Heavy", 900: "Black", 950: "Extra Black", 
+                1000: "Ultra Black" 
             }
 
             for font in font_manager.fontManager.ttflist:
-                try:
+                try:     
                     family = font.family_name if hasattr(font, "family_name") else font.name
                     style = font.style_name.lower() if hasattr(font, "style_name") else font.style.lower()
                     weight = weight_conversion.get(font.weight, str(font.weight))
@@ -1034,7 +1041,7 @@ class MainClass(QMainWindow):
             import matplotlib.pyplot as plt
             plt.close('all')
 
-            temp_dir = Path(tempfile.gettempdir()) / "wcgen_cache"
+            temp_dir = Path(tempfile.gettempdir()) / "textplora_cache"
             if (temp_dir.exists()):
                 shutil.rmtree(temp_dir, ignore_errors=True)
 
@@ -1048,7 +1055,7 @@ class MainClass(QMainWindow):
 
         dialog = QDialog(self)
         dialog.setWindowModality(Qt.NonModal)
-        dialog.setWindowTitle("About WCGen")
+        dialog.setWindowTitle("About Textplora")
         dialog.setMinimumSize(500, 400)
         dialog.setSizeGripEnabled(True)
         layout = QVBoxLayout()
@@ -2995,7 +3002,7 @@ class SentimentAnalysisThread(QThread):
         self.flair_classifier_cuslang = flair_classifier_cuslang
         self.textblob_analyzer = textblob_analyzer
         self.cached_translation = None
-        self.temp_dir = Path(tempfile.gettempdir()) / "wcgen_cache"
+        self.temp_dir = Path(tempfile.gettempdir()) / "textplora_cache"
         
         self.text_hash = hashlib.md5(text_data.encode()).hexdigest()
         self.temp_file = self.temp_dir / f"trans_{self.text_hash}.txt"

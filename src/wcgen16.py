@@ -1,3 +1,5 @@
+# Textplora 1.6
+
 import sys
 import os
 import re

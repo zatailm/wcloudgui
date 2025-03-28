@@ -14,6 +14,9 @@ import importlib
 import hashlib
 import tempfile
 import shutil
+import logging
+import logging.handlers
+from typing import Optional, Union, Dict, Any
 
 import torch
 import psutil
@@ -33,7 +36,7 @@ from PySide6.QtWidgets import (
     QHBoxLayout, QGroupBox
 )
 from PySide6.QtCore import QThread, Signal, Qt, QTimer, QMutex, QThreadPool, QObject
-from PySide6.QtGui import QIcon, QGuiApplication
+from PySide6.QtGui import QIcon, QGuiApplication, QPixmap
 import matplotlib
 matplotlib.use("QtAgg")
 import numpy as np
@@ -45,6 +48,56 @@ from sumy.nlp.tokenizers import Tokenizer
 from sumy.summarizers.lsa import LsaSummarizer
 
 os.environ["QT_SCALE_FACTOR"] = "0.75"
+
+# Setup logging configuration
+def setup_logging():
+    """Setup application logging"""
+    log_dir = Path.home() / ".textplora" / "logs"
+    log_dir.mkdir(parents=True, exist_ok=True)
+    
+    log_file = log_dir / "textplora.log"
+    
+    # Configure logging format
+    fmt = logging.Formatter(
+        '%(asctime)s - %(name)s - %(levelname)s - %(message)s'
+    )
+    
+    # File handler with rotation
+    file_handler = logging.handlers.RotatingFileHandler(
+        log_file, maxBytes=1024*1024, backupCount=5
+    )
+    file_handler.setFormatter(fmt)
+    
+    # Console handler
+    console_handler = logging.StreamHandler()
+    console_handler.setFormatter(fmt)
+    
+    # Setup root logger
+    root_logger = logging.getLogger()
+    root_logger.setLevel(logging.INFO)
+    root_logger.addHandler(file_handler)
+    root_logger.addHandler(console_handler)
+    
+    return root_logger
+
+logger = setup_logging()
+
+# Custom exceptions
+class TextploraError(Exception):
+    """Base exception for Textplora application"""
+    pass
+
+class FileLoadError(TextploraError):
+    """Error when loading files"""
+    pass 
+
+class ModelLoadError(TextploraError):
+    """Error when loading ML models"""
+    pass
+
+class ProcessingError(TextploraError):
+    """Error during text processing"""
+    pass
 
 def setup_dll_path():
     if getattr(sys, 'frozen', False):
@@ -64,33 +117,67 @@ ICON_PATH = APP_DIR / "icon.ico"
 
 logo_path = APP_DIR / "logo.png"
 
-ABOUT_TEXT = "PGh0bWw+Cjxib2R5IHN0eWxlPSJmb250LWZhbWlseTogQXJpYWwsIHNhbnMtc2VyaWY7IHRleHQtYWxpZ246IGNlbnRlcjsgcGFkZGluZzogMTBweDsiPgogICAgPGltZyBzcmM9Intsb2dvX3BhdGh9IiB3aWR0aD0iMTAwIiBoZWlnaHQ9IjEwMCIgYWx0PSJUZXh0cGxvcmEgTG9nbyI+CiAgICA8aDI+VGV4dHBsb3JhPC9oMj4KICAgIDxwPjxiPlZlcnNpb246PC9iPiAxLjY8L3A+CiAgICA8cD4mY29weTsgMjAyNSBNLiBBZGliIFphdGEgSWxtYW08L3A+CiAgICA8aHI+CiAgICA8cD5UZXh0cGxvcmEgKGZvcm1lcmx5IFdDR2VuKSBpcyBhIFB5dGhvbi1iYXNlZCBhcHBsaWNhdGlvbiB0aGF0IGhlbHBzIHlvdSBhbmFseXplIGZlZWRiYWNrLCBjb25kdWN0IHJlc2VhcmNoLCBhbmQgZXh0cmFjdCBtZWFuaW5nZnVsIGluc2lnaHRzIHdpdGggZWFzZS48L3A+CiAgICA8aHI+CiAgICA8cD48Yj5NYWluIGxpYnJhcmllczo8L2I+IFB5U2lkZTYsIG1hdHBsb3RsaWIsIHdvcmRjbG91ZCwgc2tsZWFybiwgdmFkZXJTZW50aW1lbnQsIHRleHRibG9iLCBmbGFpciwgc3VteSwgeWFrZSwgcmFrZV9ubHRrLCBQaWxsb3cuPC9wPgogICAgPGhyPgogICAgPHA+PGI+R2l0SHViIFJlcG9zaXRvcnk6PC9iPjwvcD4KICAgIDxwPjxhIGhyZWY9Imh0dHBzOi8vZ2l0aHViLmNvbS96YXRhaWxtL3djbG91ZGd1aSI+aHR0cHM6Ly9naXRodWIuY29tL3phdGFpbG0vd2Nsb3VkZ3VpPC9hPjwvcD4KICAgIDxocj4KICAgIDxwPjxiPkxpY2Vuc2U6PC9iPjwvcD4KICAgIDxwPkZyZWUgZm9yIHBlcnNvbmFsICYgZWR1Y2F0aW9uYWwgdXNlIChDQyBCWS1OQyA0LjApLjwvcD4KICAgIDxwPkxlYXJuIG1vcmU6IDxhIGhyZWY9Imh0dHBzOi8vY3JlYXRpdmVjb21tb25zLm9yZy9saWNlbnNlcy9ieS1uYy80LjAvIj5DQyBCWS1OQyA0LjA8L2E+PC9wPgo8L2JvZHk+CjwvaHRtbD4="
-
-MODE_INFO = "PGgyPlNlbnRpbWVudCBBbmFseXNpcyBNb2RlczwvaDI+CjxwPlNlbGVjdCB0aGUgbW9zdCBzdWl0YWJsZSBzZW50aW1lbnQgYW5hbHlzaXMgbWV0aG9kIGJhc2VkIG9uIHlvdXIgdGV4dCB0eXBlIGFuZCBhbmFseXNpcyBuZWVkcy48L3A+CjxoMz5UZXh0QmxvYjwvaDM+CjxwPjxiPkJlc3QgZm9yOjwvYj4gRm9ybWFsIHRleHRzLCB3ZWxsLXN0cnVjdHVyZWQgZG9jdW1lbnRzLCBuZXdzIGFydGljbGVzLCByZXNlYXJjaCBwYXBlcnMsIGFuZCByZXBvcnRzLjwvcD4KPHA+VGV4dEJsb2IgaXMgYSBsZXhpY29uLWJhc2VkIHNlbnRpbWVudCBhbmFseXNpcyB0b29sIHRoYXQgcHJvdmlkZXMgYSBzaW1wbGUgeWV0IGVmZmVjdGl2ZSBhcHByb2FjaCBmb3IgZXZhbHVhdGluZyB0aGUgc2VudGltZW50IG9mIHN0cnVjdHVyZWQgdGV4dC4gSXQgYXNzaWducyBhIHBvbGFyaXR5IHNjb3JlIChwb3NpdGl2ZSwgbmVnYXRpdmUsIG9yIG5ldXRyYWwpIGFuZCBjYW4gYWxzbyBhbmFseXplIHN1YmplY3Rpdml0eSBsZXZlbHMuPC9wPgo8aDM+VkFERVIgKFZhbGVuY2UgQXdhcmUgRGljdGlvbmFyeSBhbmQgc0VudGltZW50IFJlYXNvbmVyKTwvaDM+CjxwPjxiPkJlc3QgZm9yOjwvYj4gU29jaWFsIG1lZGlhIHBvc3RzLCB0d2VldHMsIHNob3J0IGNvbW1lbnRzLCBjaGF0IG1lc3NhZ2VzLCBhbmQgaW5mb3JtYWwgcmV2aWV3cy48L3A+CjxwPlZBREVSIGlzIHNwZWNpZmljYWxseSBkZXNpZ25lZCBmb3IgYW5hbHl6aW5nIHNob3J0LCBpbmZvcm1hbCB0ZXh0cyB0aGF0IG9mdGVuIGNvbnRhaW4gc2xhbmcsIGVtb2ppcywgYW5kIHB1bmN0dWF0aW9uLWJhc2VkIGVtb3Rpb25zLiBJdCBpcyBhIHJ1bGUtYmFzZWQgc2VudGltZW50IGFuYWx5c2lzIG1vZGVsIHRoYXQgZWZmaWNpZW50bHkgZGV0ZXJtaW5lcyBzZW50aW1lbnQgaW50ZW5zaXR5IGFuZCB3b3JrcyBleGNlcHRpb25hbGx5IHdlbGwgZm9yIHJlYWwtdGltZSBhcHBsaWNhdGlvbnMuPC9wPgo8aDM+RmxhaXI8L2gzPgo8cD48Yj5CZXN0IGZvcjo8L2I+IExvbmctZm9ybSBjb250ZW50LCBwcm9kdWN0IHJldmlld3MsIHByb2Zlc3Npb25hbCBkb2N1bWVudHMsIGFuZCBBSS1iYXNlZCBkZWVwIHNlbnRpbWVudCBhbmFseXNpcy48L3A+CjxwPkZsYWlyIHV0aWxpemVzIGRlZXAgbGVhcm5pbmcgdGVjaG5pcXVlcyBmb3Igc2VudGltZW50IGFuYWx5c2lzLCBtYWtpbmcgaXQgaGlnaGx5IGFjY3VyYXRlIGZvciBjb21wbGV4IHRleHRzLiBJdCBpcyBpZGVhbCBmb3IgYW5hbHl6aW5nIGxhcmdlLXNjYWxlIHRleHR1YWwgZGF0YSwgY2FwdHVyaW5nIGNvbnRleHQgbW9yZSBlZmZlY3RpdmVseSB0aGFuIHRyYWRpdGlvbmFsIHJ1bGUtYmFzZWQgbW9kZWxzLiBIb3dldmVyLCBpdCByZXF1aXJlcyBtb3JlIGNvbXB1dGF0aW9uYWwgcmVzb3VyY2VzIGNvbXBhcmVkIHRvIFRleHRCbG9iIGFuZCBWQURFUi48L3A+CjxoMj5JbXBvcnRhbnQgTm90ZSBmb3IgTGFuZ3VhZ2UgU3VwcG9ydDwvaDI+CjxwPldoaWxlIHRoaXMgYXBwbGljYXRpb24gc3VwcG9ydHMgbm9uLUVuZ2xpc2ggdGV4dCB0aHJvdWdoIGF1dG9tYXRpYyB0cmFuc2xhdGlvbiwgaXQgaXMgPGI+aGlnaGx5IHJlY29tbWVuZGVkPC9iPiB0byB1c2UgPGI+bWFudWFsbHkgdHJhbnNsYXRlZCBhbmQgcmVmaW5lZCBFbmdsaXNoIHRleHQ8L2I+IGZvciB0aGUgbW9zdCBhY2N1cmF0ZSBzZW50aW1lbnQgYW5hbHlzaXMuIFRoZSBidWlsdC1pbiBhdXRvbWF0aWMgdHJhbnNsYXRpb24gZmVhdHVyZSBtYXkgbm90IGFsd2F5cyBmdW5jdGlvbiBjb3JyZWN0bHksIGxlYWRpbmcgdG8gcG90ZW50aWFsIG1pc2ludGVycHJldGF0aW9ucyBvciBpbmFjY3VyYXRlIHNlbnRpbWVudCByZXN1bHRzLiBFbnN1cmUgeW91ciBjdXN0b20gbGV4aWNvbiBhbmQgbW9kZWwgaXMgdHJhaW5lZCBvbiBzaW1pbGFyIHRleHQgZG9tYWlucyBhcyB5b3VyIGFuYWx5c2lzIGRhdGEgZm9yIG9wdGltYWwgcGVyZm9ybWFuY2UuPC9wPgo8cD5Gb3IgdGhlIGJlc3QgcGVyZm9ybWFuY2UsIGVuc3VyZSB0aGF0IG5vbi1FbmdsaXNoIHRleHQgaXMgcHJvcGVybHkgcmV2aWV3ZWQgYW5kIGFkanVzdGVkIGJlZm9yZSBzZW50aW1lbnQgYW5hbHlzaXMuPC9wPgo8aDI+Q3VzdG9tIExleGljb24gRm9ybWF0IEV4YW1wbGU8L2gyPgo8cD5CZWxvdyBpcyBhbiBleGFtcGxlIG9mIGEgY3VzdG9tIGxleGljb24gZm9ybWF0IGZvciBzZW50aW1lbnQgYW5hbHlzaXM6PC9wPgo8cHJlIHN0eWxlPSdiYWNrZ3JvdW5kLWNvbG9yOiNmNGY0ZjQ7IGNvbG9yOiBibGFjazsgcGFkZGluZzoxMHB4OyBib3JkZXItcmFkaXVzOjVweDsnPgpleGNlbGxlbnQgICAxLjUKYXdmdWwgICAgICAtMS41Cm5vdCAgICAgICAgbmVnYXRpb24gICAgICAgICAjIE1hcmsgYXMgbmVnYXRpb24gd29yZAppbnRlbnNlbHkgIGludGVuc2lmaWVyOjEuNyAgIyBDdXN0b20gaW50ZW5zaWZpZXIgd2l0aCBtdWx0aXBsaWVyCjwvcHJlPgo8cD5UaGlzIGN1c3RvbSBsZXhpY29uIGFsbG93cyBmaW5lLXR1bmluZyBvZiBzZW50aW1lbnQgc2NvcmVzIGJ5IGFkZGluZyBjdXN0b20gd29yZHMsIG5lZ2F0aW9ucywgYW5kIGludGVuc2lmaWVycyB0byBpbXByb3ZlIHNlbnRpbWVudCBhbmFseXNpcyBhY2N1cmFjeS48L3A+CjxoMj5DdXN0b20gRmxhaXIgTW9kZWwgUmVxdWlyZW1lbnRzPC9oMj4KPHA+Rm9yIGN1c3RvbSBGbGFpciBtb2RlbHMgKDxiPi5wdDwvYj4gZmlsZXMpLCBlbnN1cmU6PC9wPgo8cHJlIHN0eWxlPSdiYWNrZ3JvdW5kLWNvbG9yOiNmNGY0ZjQ7IGNvbG9yOiBibGFjazsgcGFkZGluZzoxMHB4OyBib3JkZXItcmFkaXVzOjVweDsnPgoxLiBMYWJlbHMgbXVzdCBiZTogUE9TSVRJVkUsIE5FR0FUSVZFLCBvciBORVVUUkFMCjIuIE1vZGVsIG91dHB1dHMgY29uZmlkZW5jZSBzY29yZXMgKDAtMSkKMy4gVGVzdGVkIHdpdGggRmxhaXIgdjAuMTIrIGNvbXBhdGliaWxpdHkKPC9wcmU+CjxwPlRoZSBhcHBsaWNhdGlvbiB3aWxsIGF1dG9tYXRpY2FsbHkgdmFsaWRhdGUgbW9kZWwgbGFiZWxzIGR1cmluZyBsb2FkaW5nLjwvcD4="
-
-SCORE_TYPES = {
-    "VADER": "Compound Score",
-    "VADER (Custom Lexicon)": "Compound Score",
-    "TextBlob": "Polarity Score", 
-    "TextBlob (Custom Lexicon)": "Polarity Score",
-    "Flair": "Confidence Score",
-    "Flair (Custom Model)": "Confidence Score"
-}
-
-SENTIMENT_MODES = list(SCORE_TYPES.keys())
-
-THREAD_TIMEOUT = {
-    "SOFT": 1000,
-    "FORCE": 500,
-    "TERMINATION": 2000
-}
+# Kelas untuk menyimpan konstanta aplikasi
+class AppConstants:
+    """Class to store application constants and configuration values"""
+    
+    # Konstanta aplikasi
+    ABOUT_TEXT = "PGh0bWw+Cjxib2R5IHN0eWxlPSJmb250LWZhbWlseTogQXJpYWwsIHNhbnMtc2VyaWY7IHRleHQtYWxpZ246IGNlbnRlcjsgcGFkZGluZzogMTBweDsiPgogICAgPGltZyBzcmM9Intsb2dvX3BhdGh9IiB3aWR0aD0iMTAwIiBoZWlnaHQ9IjEwMCIgYWx0PSJUZXh0cGxvcmEgTG9nbyI+CiAgICA8aDI+VGV4dHBsb3JhPC9oMj4KICAgIDxwPjxiPlZlcnNpb246PC9iPiAxLjY8L3A+CiAgICA8cD4mY29weTsgMjAyNSBNLiBBZGliIFphdGEgSWxtYW08L3A+CiAgICA8aHI+CiAgICA8cD5UZXh0cGxvcmEgKGZvcm1lcmx5IFdDR2VuKSBpcyBhIFB5dGhvbi1iYXNlZCBhcHBsaWNhdGlvbiB0aGF0IGhlbHBzIHlvdSBhbmFseXplIGZlZWRiYWNrLCBjb25kdWN0IHJlc2VhcmNoLCBhbmQgZXh0cmFjdCBtZWFuaW5nZnVsIGluc2lnaHRzIHdpdGggZWFzZS48L3A+CiAgICA8aHI+CiAgICA8cD48Yj5NYWluIGxpYnJhcmllczo8L2I+IFB5U2lkZTYsIG1hdHBsb3RsaWIsIHdvcmRjbG91ZCwgc2tsZWFybiwgdmFkZXJTZW50aW1lbnQsIHRleHRibG9iLCBmbGFpciwgc3VteSwgeWFrZSwgcmFrZV9ubHRrLCBQaWxsb3cuPC9wPgogICAgPGhyPgogICAgPHA+PGI+R2l0SHViIFJlcG9zaXRvcnk6PC9iPjwvcD4KICAgIDxwPjxhIGhyZWY9Imh0dHBzOi8vZ2l0aHViLmNvbS96YXRhaWxtL3djbG91ZGd1aSI+aHR0cHM6Ly9naXRodWIuY29tL3phdGFpbG0vd2Nsb3VkZ3VpPC9hPjwvcD4KICAgIDxocj4KICAgIDxwPjxiPkxpY2Vuc2U6PC9iPjwvcD4KICAgIDxwPkZyZWUgZm9yIHBlcnNvbmFsICYgZWR1Y2F0aW9uYWwgdXNlIChDQyBCWS1OQyA0LjApLjwvcD4KICAgIDxwPkxlYXJuIG1vcmU6IDxhIGhyZWY9Imh0dHBzOi8vY3JlYXRpdmVjb21tb25zLm9yZy9saWNlbnNlcy9ieS1uYy80LjAvIj5DQyBCWS1OQyA0LjA8L2E+PC9wPgo8L2JvZHk+CjwvaHRtbD4="
+    
+    MODE_INFO = "PGgyPlNlbnRpbWVudCBBbmFseXNpcyBNb2RlczwvaDI+CjxwPlNlbGVjdCB0aGUgbW9zdCBzdWl0YWJsZSBzZW50aW1lbnQgYW5hbHlzaXMgbWV0aG9kIGJhc2VkIG9uIHlvdXIgdGV4dCB0eXBlIGFuZCBhbmFseXNpcyBuZWVkcy48L3A+CjxoMz5UZXh0QmxvYjwvaDM+CjxwPjxiPkJlc3QgZm9yOjwvYj4gRm9ybWFsIHRleHRzLCB3ZWxsLXN0cnVjdHVyZWQgZG9jdW1lbnRzLCBuZXdzIGFydGljbGVzLCByZXNlYXJjaCBwYXBlcnMsIGFuZCByZXBvcnRzLjwvcD4KPHA+VGV4dEJsb2IgaXMgYSBsZXhpY29uLWJhc2VkIHNlbnRpbWVudCBhbmFseXNpcyB0b29sIHRoYXQgcHJvdmlkZXMgYSBzaW1wbGUgeWV0IGVmZmVjdGl2ZSBhcHByb2FjaCBmb3IgZXZhbHVhdGluZyB0aGUgc2VudGltZW50IG9mIHN0cnVjdHVyZWQgdGV4dC4gSXQgYXNzaWducyBhIHBvbGFyaXR5IHNjb3JlIChwb3NpdGl2ZSwgbmVnYXRpdmUsIG9yIG5ldXRyYWwpIGFuZCBjYW4gYWxzbyBhbmFseXplIHN1YmplY3Rpdml0eSBsZXZlbHMuPC9wPgo8aDM+VkFERVIgKFZhbGVuY2UgQXdhcmUgRGljdGlvbmFyeSBhbmQgc0VudGltZW50IFJlYXNvbmVyKTwvaDM+CjxwPjxiPkJlc3QgZm9yOjwvYj4gU29jaWFsIG1lZGlhIHBvc3RzLCB0d2VldHMsIHNob3J0IGNvbW1lbnRzLCBjaGF0IG1lc3NhZ2VzLCBhbmQgaW5mb3JtYWwgcmV2aWV3cy48L3A+CjxwPlZBREVSIGlzIHNwZWNpZmljYWxseSBkZXNpZ25lZCBmb3IgYW5hbHl6aW5nIHNob3J0LCBpbmZvcm1hbCB0ZXh0cyB0aGF0IG9mdGVuIGNvbnRhaW4gc2xhbmcsIGVtb2ppcywgYW5kIHB1bmN0dWF0aW9uLWJhc2VkIGVtb3Rpb25zLiBJdCBpcyBhIHJ1bGUtYmFzZWQgc2VudGltZW50IGFuYWx5c2lzIG1vZGVsIHRoYXQgZWZmaWNpZW50bHkgZGV0ZXJtaW5lcyBzZW50aW1lbnQgaW50ZW5zaXR5IGFuZCB3b3JrcyBleGNlcHRpb25hbGx5IHdlbGwgZm9yIHJlYWwtdGltZSBhcHBsaWNhdGlvbnMuPC9wPgo8aDM+RmxhaXI8L2gzPgo8cD48Yj5CZXN0IGZvcjo8L2I+IExvbmctZm9ybSBjb250ZW50LCBwcm9kdWN0IHJldmlld3MsIHByb2Zlc3Npb25hbCBkb2N1bWVudHMsIGFuZCBBSS1iYXNlZCBkZWVwIHNlbnRpbWVudCBhbmFseXNpcy48L3A+CjxwPkZsYWlyIHV0aWxpemVzIGRlZXAgbGVhcm5pbmcgdGVjaG5pcXVlcyBmb3Igc2VudGltZW50IGFuYWx5c2lzLCBtYWtpbmcgaXQgaGlnaGx5IGFjY3VyYXRlIGZvciBjb21wbGV4IHRleHRzLiBJdCBpcyBpZGVhbCBmb3IgYW5hbHl6aW5nIGxhcmdlLXNjYWxlIHRleHR1YWwgZGF0YSwgY2FwdHVyaW5nIGNvbnRleHQgbW9yZSBlZmZlY3RpdmVseSB0aGFuIHRyYWRpdGlvbmFsIHJ1bGUtYmFzZWQgbW9kZWxzLiBIb3dldmVyLCBpdCByZXF1aXJlcyBtb3JlIGNvbXB1dGF0aW9uYWwgcmVzb3VyY2VzIGNvbXBhcmVkIHRvIFRleHRCbG9iIGFuZCBWQURFUi48L3A+CjxoMj5JbXBvcnRhbnQgTm90ZSBmb3IgTGFuZ3VhZ2UgU3VwcG9ydDwvaDI+CjxwPldoaWxlIHRoaXMgYXBwbGljYXRpb24gc3VwcG9ydHMgbm9uLUVuZ2xpc2ggdGV4dCB0aHJvdWdoIGF1dG9tYXRpYyB0cmFuc2xhdGlvbiwgaXQgaXMgPGI+aGlnaGx5IHJlY29tbWVuZGVkPC9iPiB0byB1c2UgPGI+bWFudWFsbHkgdHJhbnNsYXRlZCBhbmQgcmVmaW5lZCBFbmdsaXNoIHRleHQ8L2I+IGZvciB0aGUgbW9zdCBhY2N1cmF0ZSBzZW50aW1lbnQgYW5hbHlzaXMuIFRoZSBidWlsdC1pbiBhdXRvbWF0aWMgdHJhbnNsYXRpb24gZmVhdHVyZSBtYXkgbm90IGFsd2F5cyBmdW5jdGlvbiBjb3JyZWN0bHksIGxlYWRpbmcgdG8gcG90ZW50aWFsIG1pc2ludGVycHJldGF0aW9ucyBvciBpbmFjY3VyYXRlIHNlbnRpbWVudCByZXN1bHRzLiBFbnN1cmUgeW91ciBjdXN0b20gbGV4aWNvbiBhbmQgbW9kZWwgaXMgdHJhaW5lZCBvbiBzaW1pbGFyIHRleHQgZG9tYWlucyBhcyB5b3VyIGFuYWx5c2lzIGRhdGEgZm9yIG9wdGltYWwgcGVyZm9ybWFuY2UuPC9wPgo8cD5Gb3IgdGhlIGJlc3QgcGVyZm9ybWFuY2UsIGVuc3VyZSB0aGF0IG5vbi1FbmdsaXNoIHRleHQgaXMgcHJvcGVybHkgcmV2aWV3ZWQgYW5kIGFkanVzdGVkIGJlZm9yZSBzZW50aW1lbnQgYW5hbHlzaXMuPC9wPgo8aDI+Q3VzdG9tIExleGljb24gRm9ybWF0IEV4YW1wbGU8L2gyPgo8cD5CZWxvdyBpcyBhbiBleGFtcGxlIG9mIGEgY3VzdG9tIGxleGljb24gZm9ybWF0IGZvciBzZW50aW1lbnQgYW5hbHlzaXM6PC9wPgo8cHJlIHN0eWxlPSdiYWNrZ3JvdW5kLWNvbG9yOiNmNGY0ZjQ7IGNvbG9yOiBibGFjazsgcGFkZGluZzoxMHB4OyBib3JkZXItcmFkaXVzOjVweDsnPgpleGNlbGxlbnQgICAxLjUKYXdmdWwgICAgICAtMS41Cm5vdCAgICAgICAgbmVnYXRpb24gICAgICAgICAjIE1hcmsgYXMgbmVnYXRpb24gd29yZAppbnRlbnNlbHkgIGludGVuc2lmaWVyOjEuNyAgIyBDdXN0b20gaW50ZW5zaWZpZXIgd2l0aCBtdWx0aXBsaWVyCjwvcHJlPgo8cD5UaGlzIGN1c3RvbSBsZXhpY29uIGFsbG93cyBmaW5lLXR1bmluZyBvZiBzZW50aW1lbnQgc2NvcmVzIGJ5IGFkZGluZyBjdXN0b20gd29yZHMsIG5lZ2F0aW9ucywgYW5kIGludGVuc2lmaWVycyB0byBpbXByb3ZlIHNlbnRpbWVudCBhbmFseXNpcyBhY2N1cmFjeS48L3A+CjxoMj5DdXN0b20gRmxhaXIgTW9kZWwgUmVxdWlyZW1lbnRzPC9oMj4KPHA+Rm9yIGN1c3RvbSBGbGFpciBtb2RlbHMgKDxiPi5wdDwvYj4gZmlsZXMpLCBlbnN1cmU6PC9wPgo8cHJlIHN0eWxlPSdiYWNrZ3JvdW5kLWNvbG9yOiNmNGY0ZjQ7IGNvbG9yOiBibGFjazsgcGFkZGluZzoxMHB4OyBib3JkZXItcmFkaXVzOjVweDsnPgoxLiBMYWJlbHMgbXVzdCBiZTogUE9TSVRJVkUsIE5FR0FUSVZFLCBvciBORVVUUkFMCjIuIE1vZGVsIG91dHB1dHMgY29uZmlkZW5jZSBzY29yZXMgKDAtMSkKMy4gVGVzdGVkIHdpdGggRmxhaXIgdjAuMTIrIGNvbXBhdGliaWxpdHkKPC9wcmU+CjxwPlRoZSBhcHBsaWNhdGlvbiB3aWxsIGF1dG9tYXRpY2FsbHkgdmFsaWRhdGUgbW9kZWwgbGFiZWxzIGR1cmluZyBsb2FkaW5nLjwvcD4="
+    
+    # Mapping untuk tipe skor berdasarkan mode analisis sentimen
+    SCORE_TYPES = {
+        "TextBlob": "Polarity Score", 
+        "TextBlob (Custom Lexicon)": "Polarity Score",
+        "VADER": "Compound Score",
+        "VADER (Custom Lexicon)": "Compound Score",        
+        "Flair": "Confidence Score",
+        "Flair (Custom Model)": "Confidence Score"
+    }
+    
+    # Daftar mode analisis sentimen yang didukung
+    SENTIMENT_MODES = list(SCORE_TYPES.keys())
+    
+    # Timeout untuk manajemen thread
+    THREAD_TIMEOUT = {
+        "SOFT": 1000,
+        "FORCE": 500,
+        "TERMINATION": 2000
+    }
 
 def sanitize_path(path):
+    """
+    Memvalidasi path file untuk mencegah serangan path traversal
+    
+    Args:
+        path (str): Path yang akan divalidasi
+        
+    Returns:
+        str: Path yang telah dinormalisasi
+        
+    Raises:
+        ValueError: Jika path mencoba melakukan traversal ke direktori di luar base_dir
+    """
+    if not path:
+        return path
+        
     path = os.path.normpath(path)
-    base_dir = os.path.abspath(path)
-    abs_path = os.path.abspath(path)
-    if not abs_path.startswith(base_dir):
-        raise ValueError("Path traversal attempt detected")
+    
+    # Jika path absolut, periksa apakah berada dalam direktori yang diizinkan
+    if os.path.isabs(path):
+        # Daftar direktori yang diizinkan (tambahkan sesuai kebutuhan)
+        allowed_dirs = [
+            os.path.abspath(os.path.expanduser("~")),  # Home directory
+            os.path.abspath(APP_DIR),                  # Application directory
+            os.path.abspath(tempfile.gettempdir())     # Temp directory
+        ]
+        
+        abs_path = os.path.abspath(path)
+        if not any(abs_path.startswith(allowed_dir) for allowed_dir in allowed_dirs):
+            logger.warning(f"Path traversal attempt detected: {path}")
+            raise ValueError(f"Path tidak diizinkan: {path}")
+    
     return path
 
 @lru_cache(maxsize=128)
@@ -105,7 +192,7 @@ def load_stopwords():
         with open(stopwords_path, 'r', encoding='utf-8') as f:
             return set(word.strip() for word in f)
     except Exception as e:
-        print(f"Warning: Could not load stopwords from {stopwords_path}: {e}")
+        logger.warning(f"Could not load stopwords from {stopwords_path}: {e}")
         return set()
 
 def is_connected():
@@ -119,14 +206,29 @@ def is_connected():
 class MainClass(QMainWindow):
     def __init__(self):
         super().__init__()
-
+        
         self.user_name = os.getlogin()
-
+        
+        # Inisialisasi dasar
+        self.active_threads = []
+        self.threads_mutex = QMutex()
+        
+        # Gunakan konstanta dari AppConstants
+        self.sentiment_mode = AppConstants.SENTIMENT_MODES[0]  # Default ke mode pertama
+        
         self.perf_monitor = PerformanceMonitor()
         
-        self.active_threads = ThreadSafeSet()
         self.resource_manager = ResourceManager()
         self.lazy_loader = LazyLoader()
+        
+        # Inisialisasi cache manager
+        self.cache_manager = CacheManager(threshold_percent=75, check_interval=60000)
+        
+        # Daftarkan fungsi-fungsi yang menggunakan lru_cache
+        self.register_cached_functions()
+        
+        # Mulai pemantauan memori
+        self.cache_manager.start_monitoring()
         
         self.vectorizer = CountVectorizer(max_features=1000, stop_words='english')
         self.tfidf = TfidfVectorizer(max_features=1000, stop_words='english')
@@ -262,12 +364,12 @@ class MainClass(QMainWindow):
             self.threads_mutex.unlock()
 
     def setup_thread_management(self):
-        """Initialize thread management"""
-        self.thread_pool = QThreadPool.globalInstance()
-        self.thread_pool.setMaxThreadCount(3)
+        """Setup thread management and cleanup mechanisms"""
         self.thread_manager = ThreadManager()
-        self.threads_mutex = QMutex()
         
+        # Connect application aboutToQuit signal to thread cleanup
+        QApplication.instance().aboutToQuit.connect(self.cleanup_threads)
+
     def init_analyzers(self):
         """Initialize analyzers with caching"""
         from functools import lru_cache
@@ -640,10 +742,7 @@ class MainClass(QMainWindow):
         sentiment_layout.addWidget(self.sentiment_mode_label, 0, 0, 1, 2)
 
         self.sentiment_mode_combo = QComboBox(self)
-        self.sentiment_mode_combo.addItems([
-            "TextBlob", "TextBlob (Custom Lexicon)", "VADER", "VADER (Custom Lexicon)", 
-            "Flair", "Flair (Custom Model)"
-        ])
+        self.sentiment_mode_combo.addItems(AppConstants.SENTIMENT_MODES)
         self.sentiment_mode_combo.setToolTip(
             "TextBlob (Best for formal texts like news articles and reports.)\n"
             "VADER (Best for social media, tweets, and informal texts with slang/emojis.)\n"
@@ -682,18 +781,35 @@ class MainClass(QMainWindow):
         
         button_layout = QHBoxLayout()
         
+        # Tombol About
         self.about_button = QPushButton("About", self)
         self.about_button.clicked.connect(self.show_about)
+        self.about_button.setFixedWidth(100)  # Atur ukuran tetap
         button_layout.addWidget(self.about_button)
-
+        
+        # Tambahkan tombol Clear Cache di sini
+        self.clear_cache_button = QPushButton("Clear Cache", self)
+        self.clear_cache_button.setToolTip("Manually clear all cached data to free memory")
+        self.clear_cache_button.clicked.connect(self.clear_caches)
+        self.clear_cache_button.setFixedWidth(100)  # Atur ukuran tetap
+        button_layout.addWidget(self.clear_cache_button)
+        
+        # Spacer untuk mendorong tombol ke kanan
+        button_layout.addStretch()
+        
+        # Tombol STOP
         self.panic_button = QPushButton("STOP", self)
+        self.panic_button.setStyleSheet("background-color: #ff6666;")
         self.panic_button.clicked.connect(self.stop_all_processes)
+        self.panic_button.setFixedWidth(100)  # Atur ukuran tetap
         button_layout.addWidget(self.panic_button)
-
-        self.quit_button = QPushButton("Quit", self)
+        
+        # Tombol Exit
+        self.quit_button = QPushButton("Exit", self)
         self.quit_button.clicked.connect(self.close)
+        self.quit_button.setFixedWidth(100)  # Atur ukuran tetap
         button_layout.addWidget(self.quit_button)
-
+        
         bottom_layout.addLayout(button_layout)
 
         bottom_group.setLayout(bottom_layout)
@@ -802,7 +918,7 @@ class MainClass(QMainWindow):
 
     def stop_all_processes(self):
         """Enhanced process termination including word cloud generation"""
-        print("Starting enhanced process termination...")
+        logger.info("Starting enhanced process termination...")
         self.disable_buttons()
 
         self.progress_timer.stop()
@@ -821,44 +937,44 @@ class MainClass(QMainWindow):
 
             if hasattr(self, 'file_loader_thread') and self.file_loader_thread:
                 if self.file_loader_thread.isRunning():
-                    print("Terminating File Loader thread...")
+                    logger.info("Terminating File Loader thread...")
                     all_threads.append(self.file_loader_thread)
 
             if hasattr(self, 'sentiment_thread') and self.sentiment_thread:
                 if self.sentiment_thread.isRunning():
-                    print("Terminating Sentiment Analysis thread...")
+                    logger.info("Terminating Sentiment Analysis thread...")
                     all_threads.append(self.sentiment_thread)
 
             if hasattr(self, 'flair_loader_thread') and self.flair_loader_thread:
                 if self.flair_loader_thread.isRunning():
-                    print("Terminating Flair Model Loader thread...")
+                    logger.info("Terminating Flair Model Loader thread...")
                     all_threads.append(self.flair_loader_thread)
 
             if hasattr(self, 'lexicon_loader_thread') and self.lexicon_loader_thread:
                 if self.lexicon_loader_thread.isRunning():
-                    print("Terminating Lexicon Loader thread...")
+                    logger.info("Terminating Lexicon Loader thread...")
                     all_threads.append(self.lexicon_loader_thread)
 
             if hasattr(self, 'model_loader_thread') and self.model_loader_thread:
                 if self.model_loader_thread.isRunning():
-                    print("Terminating Model Loader thread...")
+                    logger.info("Terminating Model Loader thread...")
                     all_threads.append(self.model_loader_thread)
 
             if hasattr(self, 'import_thread') and self.import_thread:
                 if self.import_thread.isRunning():
-                    print("Terminating Import thread...")
+                    logger.info("Terminating Import thread...")
                     self.import_thread.stop()
                     all_threads.append(self.import_thread)
 
             if hasattr(self, 'topic_tab'):
                 if hasattr(self.topic_tab, 'topic_thread') and self.topic_tab.topic_thread:
                     if self.topic_tab.topic_thread.isRunning():
-                        print("Terminating Topic Analysis thread...")
+                        logger.info("Terminating Topic Analysis thread...")
                         all_threads.append(self.topic_tab.topic_thread)
                         
                 if hasattr(self.topic_tab, 'keyword_thread') and self.topic_tab.keyword_thread:
                     if self.topic_tab.keyword_thread.isRunning():
-                        print("Terminating Keyword Extraction thread...")
+                        logger.info("Terminating Keyword Extraction thread...")
                         all_threads.append(self.topic_tab.keyword_thread)
 
             for thread in all_threads:
@@ -866,14 +982,14 @@ class MainClass(QMainWindow):
                     if not thread.isRunning():
                         continue
                         
-                    print(f"Terminating {type(thread).__name__}...")
+                    logger.info(f"Terminating {type(thread).__name__}...")
                     thread.requestInterruption()
                     
                     if thread.wait(800):
-                        print(f"Graceful stop: {type(thread).__name__}")
+                        logger.info(f"Graceful stop: {type(thread).__name__}")
                         stopped_threads.append(thread)
                     else:
-                        print(f"Forcing termination: {type(thread).__name__}")
+                        logger.info(f"Forcing termination: {type(thread).__name__}")
                         thread.terminate()
                         if thread.wait(500):
                             stopped_threads.append(thread)
@@ -881,7 +997,7 @@ class MainClass(QMainWindow):
                             failed_to_stop.append(thread)
                             
                 except Exception as e:
-                    print(f"Termination error: {str(e)}")
+                    logger.error(f"Termination error: {str(e)}")
                     failed_to_stop.append(thread)
 
             self.threads_mutex.lock()
@@ -901,13 +1017,13 @@ class MainClass(QMainWindow):
             QMessageBox.information(self, "Process Report", report)
 
         except Exception as e:
-            print(f"Critical termination error: {str(e)}")
+            logger.error(f"Critical termination error: {str(e)}")
         finally:
             self.progress_timer.stop()
             self.unified_progress_bar.setValue(0)
             self.unified_progress_bar.setVisible(False)      
             self.enable_buttons()
-            print("Enhanced termination completed")
+            logger.info("Enhanced termination completed")
 
     def disable_buttons(self):
         """Disable all buttons during processing"""
@@ -969,51 +1085,48 @@ class MainClass(QMainWindow):
         QApplication.processEvents()    
 
     def closeEvent(self, event):
-        """Enhanced application shutdown"""
-        reply = QMessageBox.question(
-            self,
-            "Quit Confirmation",
-            "<b>Are you sure you want to quit?</b><br>"
-            "All ongoing processes will be terminated.",
-            QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
-            QMessageBox.StandardButton.No
+        """Handle application close event with proper cleanup"""
+        # Ask for confirmation if there are active threads
+        if self.thread_manager.active_threads:
+            reply = QMessageBox.question(
+                self, 
+                'Confirm Exit',
+                'There are active processes running. Are you sure you want to exit?',
+                QMessageBox.Yes | QMessageBox.No, 
+                QMessageBox.No
+            )
+        else:
+            reply = QMessageBox.question(
+                self,
+                "Confirm Exit",
+                "<b>Are you sure you want to exit?</b><br>",
+                QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
+                QMessageBox.StandardButton.No
         )
-
-        if reply == QMessageBox.StandardButton.No:
+            
+        if reply == QMessageBox.No:
             event.ignore()
             return
-
-        print("Initiating application shutdown...")
         
-        try:
-            if self.import_thread:
-                self.import_thread.stop()
-                self.import_thread.wait()
-            
-            self.threads_mutex.lock()
-            active_threads = self.active_threads.copy()
-            self.threads_mutex.unlock()
-            
-            for thread in active_threads:
-                try:
-                    if thread and thread.isRunning():
-                        thread.requestInterruption()
-                        thread.quit()
-                        if not thread.wait(500):
-                            thread.terminate()
-                            thread.wait()
-                except:
-                    pass
-                    
-            self.cleanup()
-            
-        except Exception as e:
-            print(f"Error during shutdown: {e}")
-        finally:
-            event.accept()
+        # Proceed with cleanup
+        self.cleanup_threads()
+        
+        # Save application settings
+        # self.save_settings()
+        
+        # Accept the close event
+        event.accept()
 
     def cleanup(self):
-        """Clean up resources before exit"""
+        """Enhanced application cleanup"""
+        logger.info("Performing application cleanup")
+        
+        # Hentikan pemantauan memori
+        self.cache_manager.stop_monitoring()
+        
+        # Bersihkan semua cache
+        self.cache_manager.clear_all_caches()
+        
         try:
             self.threads_mutex.lock()
             try:
@@ -1050,32 +1163,18 @@ class MainClass(QMainWindow):
                 shutil.rmtree(temp_dir, ignore_errors=True)
 
         except Exception as e:
-            print(f"Cleanup error: {e}")
+            logger.error(f"Cleanup error: {e}")
         finally:
             QApplication.processEvents()
 
     def show_about(self):
-        about_text = base64.b64decode(ABOUT_TEXT.encode()).decode()
+        """Show about dialog using DialogFactory"""
+        about_text = base64.b64decode(AppConstants.ABOUT_TEXT.encode()).decode()
         about_text = about_text.replace("{logo_path}", str(logo_path.as_uri()))
         
-        dialog = QDialog(self)
-        dialog.setWindowModality(Qt.NonModal)
-        dialog.setWindowTitle("About Textplora")
-        dialog.setMinimumSize(500, 400)
-        dialog.setSizeGripEnabled(True)
-        layout = QVBoxLayout()
-
-        text_browser = QTextBrowser()
-        text_browser.setHtml(about_text)
-        text_browser.setOpenExternalLinks(True)
-        text_browser.setReadOnly(True)
-        layout.addWidget(text_browser)
-
-        close_button = QPushButton("Close")
-        close_button.clicked.connect(dialog.accept)
-        layout.addWidget(close_button)
-
-        dialog.setLayout(layout)
+        dialog = DialogFactory.create_info_dialog(
+            self, "About Textplora", about_text, modal=False
+        )
         dialog.show()
 
     def open_file(self):
@@ -1859,26 +1958,12 @@ class MainClass(QMainWindow):
         self.flair_loader_thread = None        
 
     def show_sentiment_mode_info(self):
-        mode_info = base64.b64decode(MODE_INFO.encode()).decode()
-
-        dialog = QDialog(self)
-        dialog.setWindowModality(Qt.NonModal)
-        dialog.setWindowTitle("Sentiment Analysis Modes")
-        dialog.setMinimumSize(500, 400)
-        dialog.setSizeGripEnabled(True)
-
-        layout = QVBoxLayout()
-        text_browser = QTextBrowser()
-        text_browser.setHtml(mode_info)
-        text_browser.setOpenExternalLinks(True)
-        text_browser.setReadOnly(True)
-        layout.addWidget(text_browser)
-
-        close_button = QPushButton("Close")
-        close_button.clicked.connect(dialog.accept)
-        layout.addWidget(close_button)
-
-        dialog.setLayout(layout)
+        """Show sentiment mode info dialog using DialogFactory"""
+        mode_info = base64.b64decode(AppConstants.MODE_INFO.encode()).decode()
+        
+        dialog = DialogFactory.create_info_dialog(
+            self, "Sentiment Analysis Modes", mode_info, modal=False
+        )
         dialog.show()
 
     def update_topic_analysis(self, text):
@@ -1961,7 +2046,7 @@ class MainClass(QMainWindow):
                     for score, word in pairs[:num_keywords]]
                     
         except ValueError as e:
-            print(f"TF-IDF extraction error: {str(e)}")
+            logger.error(f"TF-IDF extraction error: {str(e)}")
             return [{'keyword': 'Error: No valid keywords found', 'score': 0.0}]
 
     def _process_topic_modeling(self, text, num_topics, model_type='lda'):
@@ -2003,7 +2088,7 @@ class MainClass(QMainWindow):
             } for idx, topic in enumerate(model.components_)]
             
         except Exception as e:
-            print(f"{model_type.upper()} Analysis error: {str(e)}")
+            logger.error(f"{model_type.upper()} Analysis error: {str(e)}")
             raise ValueError(f"Topic analysis failed: {str(e)}")
 
     def analyze_topics_lda(self, text, num_topics=5):
@@ -2091,7 +2176,7 @@ class MainClass(QMainWindow):
         • Some unimportant words slipping through.<br>
         • Potential noise in your dataset.<br><br>
 
-        <b>No immediate action is required.</b> However, if you’d like to refine your stopwords list, you may consider the following:<br>
+        <b>No immediate action is required.</b> However, if you'd like to refine your stopwords list, you may consider the following:<br>
         1. Review these tokens.<br>
         2. Add them to the stopwords list if they are irrelevant.<br>
         3. Regenerate the analysis for improved results.<br><br>
@@ -2114,7 +2199,7 @@ class MainClass(QMainWindow):
             self._cached_colormaps.clear()
                 
         except Exception as e:
-            print(f"Cache cleanup error: {e}")
+            logger.error(f"Cache cleanup error: {e}")
 
     def summarize_text(self):
         if not self.text_data:
@@ -2149,6 +2234,503 @@ class MainClass(QMainWindow):
     def handle_summarize_error(self, error_msg):
         QMessageBox.critical(self, "Error", f"Failed to summarize text: {error_msg}")
         self.enable_buttons()
+
+    def get_score_type(self):
+        return AppConstants.SCORE_TYPES.get(self.mode, "Score")
+
+    def cleanup_threads(self):
+        """Clean up all running threads before application exit"""
+        logger.info("Cleaning up threads before exit")
+        
+        # Stop all threads with proper timeout
+        self.thread_manager.stop_all_threads(wait_timeout=AppConstants.THREAD_TIMEOUT["SOFT"])
+        
+        # Log any remaining threads that couldn't be stopped
+        if self.thread_manager.active_threads:
+            thread_names = [t.objectName() or "unnamed" for t in self.thread_manager.active_threads]
+            logger.warning(f"Some threads could not be stopped: {thread_names}")
+
+    def create_worker_thread(self, worker, on_finished=None, on_error=None, thread_name=None):
+        """
+        Create and configure a worker thread with proper error handling and cleanup
+        
+        Args:
+            worker (QRunnable): The worker to run in the thread
+            on_finished (callable, optional): Callback when thread finishes successfully
+            on_error (callable, optional): Callback when thread encounters an error
+            thread_name (str, optional): Name for the thread for debugging purposes
+            
+        Returns:
+            QThread: The configured thread object
+        """
+        thread = QThread()
+        if thread_name:
+            thread.setObjectName(thread_name)
+        
+        # Move worker to thread
+        worker.moveToThread(thread)
+        
+        # Connect signals
+        thread.started.connect(worker.run)
+        worker.finished.connect(thread.quit)
+        worker.finished.connect(worker.deleteLater)
+        thread.finished.connect(thread.deleteLater)
+        
+        # Connect custom callbacks if provided
+        if on_finished:
+            worker.finished.connect(on_finished)
+        if on_error:
+            worker.error.connect(on_error)
+        
+        # Setup cleanup when thread finishes
+        thread.finished.connect(lambda: self.thread_manager.remove_thread(thread))
+        
+        # Add to managed threads
+        self.thread_manager.add_thread(thread)
+        
+        return thread
+
+    def register_cached_functions(self):
+        """Mendaftarkan semua fungsi yang menggunakan lru_cache ke cache manager"""
+        # Daftarkan metode dengan lru_cache
+        for name in dir(self):
+            if name.startswith('__'):  # Lewati metode internal
+                continue
+                
+            try:
+                attr = getattr(self.__class__, name)
+                # Hanya periksa apakah ini adalah cached_property
+                if isinstance(attr, cached_property):
+                    self.cache_manager.register_cached_property(self, name)
+            except (AttributeError, TypeError):
+                pass
+            
+            try:
+                # Periksa metode instance yang memiliki cache_clear
+                attr = getattr(self, name, None)
+                if callable(attr) and hasattr(attr, 'cache_clear'):
+                    self.cache_manager.register_cached_function(attr)
+            except (AttributeError, TypeError):
+                pass
+        
+        # Daftarkan fungsi global dengan lru_cache
+        for name, func in globals().items():
+            if callable(func) and hasattr(func, 'cache_clear'):
+                self.cache_manager.register_cached_function(func)
+
+    def clear_caches(self):
+        """Membersihkan semua cache secara manual"""
+        self.cache_manager.clear_all_caches()
+        self.statusBar().showMessage("All caches cleared", 3000)
+
+    def create_utility_buttons(self):
+        """Create utility buttons"""
+        utility_group = QGroupBox("Utilities", self)
+        layout = QVBoxLayout()
+        
+        # Tombol untuk membersihkan cache
+        clear_cache_btn = QPushButton("Clear Cache", self)
+        clear_cache_btn.setToolTip("Manually clear all cached data to free memory")
+        clear_cache_btn.clicked.connect(self.clear_caches)
+        layout.addWidget(clear_cache_btn)
+        
+        # ... tombol utilitas lainnya ...
+        
+        utility_group.setLayout(layout)
+        return utility_group
+
+    def detect_file_format(self, file_path, content):
+        """
+        Deteksi format file dan berikan penanganan khusus jika diperlukan
+        
+        Args:
+            file_path (str): Path file
+            content (str): Isi file
+            
+        Returns:
+            tuple: (processed_content, file_type)
+        """
+        ext = Path(file_path).suffix.lower()
+        
+        # Deteksi format berdasarkan ekstensi
+        if ext == '.csv':
+            # Coba deteksi delimiter
+            delimiters = [',', ';', '\t', '|']
+            delimiter = ','  # default
+            
+            for d in delimiters:
+                if d in content[:1000]:
+                    delimiter = d
+                    break
+            
+            # Tanyakan kepada pengguna apakah ingin memproses sebagai CSV
+            reply = QMessageBox.question(
+                self,
+                "CSV File Detected",
+                f"This appears to be a CSV file with delimiter '{delimiter}'.\n\n"
+                "How would you like to process it?",
+                "Extract Text Column", "Join All Columns", "Raw Text",
+                defaultButtonNumber=0
+            )
+            
+            if reply == 0:  # Extract Text Column
+                # Tampilkan dialog untuk memilih kolom
+                column_index, ok = QInputDialog.getInt(
+                    self, "Select Column", "Enter the column number (0-based):", 0, 0, 100, 1
+                )
+                if ok:
+                    try:
+                        import csv
+                        from io import StringIO
+                        
+                        rows = []
+                        reader = csv.reader(StringIO(content), delimiter=delimiter)
+                        for row in reader:
+                            if len(row) > column_index:
+                                rows.append(row[column_index])
+                        
+                        return ("\n".join(rows), "csv_column")
+                    except Exception as e:
+                        logger.error(f"Error processing CSV column: {e}")
+                        # Fallback ke raw text
+            
+            elif reply == 1:  # Join All Columns
+                try:
+                    import csv
+                    from io import StringIO
+                    
+                    rows = []
+                    reader = csv.reader(StringIO(content), delimiter=delimiter)
+                    for row in reader:
+                        rows.append(" ".join(row))
+                    
+                    return ("\n".join(rows), "csv_joined")
+                except Exception as e:
+                    logger.error(f"Error joining CSV columns: {e}")
+                    # Fallback ke raw text
+        
+        elif ext in ['.html', '.xml']:
+            # Tanyakan kepada pengguna apakah ingin mengekstrak teks dari HTML/XML
+            reply = QMessageBox.question(
+                self,
+                f"{ext.upper()[1:]} File Detected",
+                f"This appears to be a {ext.upper()[1:]} file.\n\n"
+                "Would you like to extract plain text from it?",
+                QMessageBox.Yes | QMessageBox.No,
+                QMessageBox.Yes
+            )
+            
+            if reply == QMessageBox.Yes:
+                try:
+                    from bs4 import BeautifulSoup
+                    
+                    soup = BeautifulSoup(content, 'html.parser')
+                    # Hapus script dan style
+                    for script in soup(["script", "style"]):
+                        script.extract()
+                    
+                    # Ambil teks
+                    text = soup.get_text(separator="\n")
+                    
+                    # Bersihkan teks
+                    lines = [line.strip() for line in text.splitlines() if line.strip()]
+                    text = "\n".join(lines)
+                    
+                    return (text, f"{ext[1:]}_extracted")
+                except ImportError:
+                    QMessageBox.warning(
+                        self,
+                        "Module Missing",
+                        "BeautifulSoup module is required to extract text from HTML/XML.\n"
+                        "Using raw text instead."
+                    )
+                except Exception as e:
+                    logger.error(f"Error extracting text from {ext}: {e}")
+                    # Fallback ke raw text
+        
+        # Default: gunakan teks mentah
+        return (content, "raw_text")
+
+    def open_file_dialog(self):
+        """Open file dialog with path validation"""
+        options = QFileDialog.Options()
+        file_filter = (
+            "Text Files (*.txt);;PDF Files (*.pdf);;Word Documents (*.doc *.docx);;"
+            "CSV Files (*.csv);;Excel Files (*.xlsx *.xls);;All Files (*)"
+        )
+        
+        file_path, _ = QFileDialog.getOpenFileName(
+            self, "Open File", "", file_filter, options=options
+        )
+        
+        if file_path:
+            try:
+                validated_path = sanitize_path(file_path)
+                
+                # Periksa ekstensi file
+                ext = Path(validated_path).suffix.lower()
+                supported_exts = ['.txt', '.pdf', '.doc', '.docx', '.csv', '.xlsx', '.xls']
+                
+                if ext not in supported_exts:
+                    QMessageBox.warning(
+                        self,
+                        "Unsupported File Type",
+                        f"The file type '{ext}' is not supported. Please select a supported file type."
+                    )
+                    return
+                
+                # Proses file berdasarkan ekstensi
+                if ext == '.txt':
+                    content = FileOperations.load_text_file(self, validated_path)
+                elif ext in ['.csv']:
+                    content = self.load_csv_file(validated_path)
+                elif ext in ['.xlsx', '.xls']:
+                    content = self.load_excel_file(validated_path)
+                elif ext in ['.pdf']:
+                    content = self.load_pdf_file(validated_path)
+                elif ext in ['.doc', '.docx']:
+                    content = self.load_word_file(validated_path)
+                else:
+                    content = None
+                    
+                if content is not None:
+                    self.text_data = content
+                    self.file_path = validated_path
+                    self.text_edit.setPlainText(content)
+                    
+                    # Update status bar
+                    self.statusBar().showMessage(
+                        f"Loaded: {os.path.basename(validated_path)}"
+                    )
+            except ValueError as e:
+                QMessageBox.critical(self, "Security Error", str(e))
+                logger.warning(f"Blocked access to file: {file_path}")
+
+    def load_csv_file(self, file_path):
+        """Load and process CSV file"""
+        try:
+            import pandas as pd
+            
+            # Coba deteksi delimiter
+            with open(file_path, 'r', encoding='utf-8') as f:
+                sample = f.read(1024)
+                
+            delimiters = [',', ';', '\t', '|']
+            delimiter = ','  # default
+            
+            for d in delimiters:
+                if d in sample:
+                    delimiter = d
+                    break
+            
+            # Tanyakan kepada pengguna bagaimana memproses CSV
+            reply = QMessageBox.question(
+                self,
+                "CSV File Options",
+                f"How would you like to process this CSV file?\nDetected delimiter: '{delimiter}'",
+                "Extract Column", "Join All Columns", "Cancel",
+                defaultButtonNumber=0
+            )
+            
+            if reply == 0:  # Extract Column
+                # Baca header untuk menampilkan opsi kolom
+                df = pd.read_csv(file_path, delimiter=delimiter, nrows=0)
+                columns = df.columns.tolist()
+                
+                column, ok = QInputDialog.getItem(
+                    self, "Select Column", "Choose text column to extract:", 
+                    columns, 0, False
+                )
+                
+                if ok and column:
+                    df = pd.read_csv(file_path, delimiter=delimiter, usecols=[column])
+                    return "\n".join(df[column].astype(str).tolist())
+                return None
+                
+            elif reply == 1:  # Join All Columns
+                df = pd.read_csv(file_path, delimiter=delimiter)
+                # Gabungkan semua kolom dengan spasi
+                result = []
+                for _, row in df.iterrows():
+                    result.append(" ".join(row.astype(str).tolist()))
+                return "\n".join(result)
+                
+            else:  # Cancel
+                return None
+                
+        except Exception as e:
+            QMessageBox.critical(self, "Error", f"Failed to load CSV file: {str(e)}")
+            logger.error(f"Error loading CSV file {file_path}: {e}")
+            return None
+
+    def load_excel_file(self, file_path):
+        """Load and process Excel file"""
+        try:
+            import pandas as pd
+            
+            # Baca workbook
+            xl = pd.ExcelFile(file_path)
+            
+            # Jika ada lebih dari satu sheet, tanyakan kepada pengguna
+            if len(xl.sheet_names) > 1:
+                sheet, ok = QInputDialog.getItem(
+                    self, "Select Sheet", "Choose Excel sheet to load:", 
+                    xl.sheet_names, 0, False
+                )
+                
+                if not ok:
+                    return None
+            else:
+                sheet = xl.sheet_names[0]
+            
+            # Baca sheet yang dipilih
+            df = pd.read_excel(file_path, sheet_name=sheet)
+            
+            # Tanyakan kepada pengguna bagaimana memproses Excel
+            reply = QMessageBox.question(
+                self,
+                "Excel File Options",
+                "How would you like to process this Excel file?",
+                "Extract Column", "Join All Columns", "Cancel",
+                defaultButtonNumber=0
+            )
+            
+            if reply == 0:  # Extract Column
+                columns = df.columns.tolist()
+                column, ok = QInputDialog.getItem(
+                    self, "Select Column", "Choose text column to extract:", 
+                    columns, 0, False
+                )
+                
+                if ok and column:
+                    return "\n".join(df[column].astype(str).tolist())
+                return None
+                
+            elif reply == 1:  # Join All Columns
+                # Gabungkan semua kolom dengan spasi
+                result = []
+                for _, row in df.iterrows():
+                    result.append(" ".join(row.astype(str).tolist()))
+                return "\n".join(result)
+                
+            else:  # Cancel
+                return None
+                
+        except Exception as e:
+            QMessageBox.critical(self, "Error", f"Failed to load Excel file: {str(e)}")
+            logger.error(f"Error loading Excel file {file_path}: {e}")
+            return None
+
+    def load_pdf_file(self, file_path):
+        """Load and process PDF file"""
+        try:
+            # Cek apakah PyPDF2 tersedia
+            try:
+                import PyPDF2
+            except ImportError:
+                QMessageBox.critical(
+                    self, 
+                    "Missing Dependency", 
+                    "PyPDF2 is required to read PDF files. Please install it with 'pip install PyPDF2'."
+                )
+                return None
+            
+            with open(file_path, 'rb') as file:
+                reader = PyPDF2.PdfReader(file)
+                
+                # Jika PDF memiliki banyak halaman, tanyakan kepada pengguna
+                if len(reader.pages) > 1:
+                    options = ["All Pages", "Select Page Range", "Cancel"]
+                    reply = QMessageBox.question(
+                        self,
+                        "PDF Options",
+                        f"This PDF has {len(reader.pages)} pages. How would you like to proceed?",
+                        *options,
+                        defaultButtonNumber=0
+                    )
+                    
+                    if reply == 0:  # All Pages
+                        text = ""
+                        for page in reader.pages:
+                            text += page.extract_text() + "\n\n"
+                        return text
+                        
+                    elif reply == 1:  # Select Page Range
+                        start, ok1 = QInputDialog.getInt(
+                            self, "Start Page", "Enter start page (1-based):", 
+                            1, 1, len(reader.pages), 1
+                        )
+                        
+                        if not ok1:
+                            return None
+                            
+                        end, ok2 = QInputDialog.getInt(
+                            self, "End Page", "Enter end page:", 
+                            min(start + 9, len(reader.pages)), start, len(reader.pages), 1
+                        )
+                        
+                        if not ok2:
+                            return None
+                        
+                        text = ""
+                        for i in range(start - 1, end):
+                            text += reader.pages[i].extract_text() + "\n\n"
+                        return text
+                        
+                    else:  # Cancel
+                        return None
+                else:
+                    # Hanya satu halaman
+                    return reader.pages[0].extract_text()
+                    
+        except Exception as e:
+            QMessageBox.critical(self, "Error", f"Failed to load PDF file: {str(e)}")
+            logger.error(f"Error loading PDF file {file_path}: {e}")
+            return None
+
+    def load_word_file(self, file_path):
+        """Load and process Word document"""
+        try:
+            # Cek apakah python-docx tersedia
+            try:
+                import docx
+            except ImportError:
+                QMessageBox.critical(
+                    self, 
+                    "Missing Dependency", 
+                    "python-docx is required to read Word documents. Please install it with 'pip install python-docx'."
+                )
+                return None
+            
+            doc = docx.Document(file_path)
+            
+            # Ekstrak teks dari paragraf
+            text = "\n".join([paragraph.text for paragraph in doc.paragraphs if paragraph.text])
+            
+            # Jika dokumen memiliki tabel, tanyakan kepada pengguna
+            if doc.tables:
+                reply = QMessageBox.question(
+                    self,
+                    "Word Document Tables",
+                    f"This document contains {len(doc.tables)} tables. Include table content?",
+                    QMessageBox.Yes | QMessageBox.No,
+                    QMessageBox.Yes
+                )
+                
+                if reply == QMessageBox.Yes:
+                    # Ekstrak teks dari tabel
+                    for table in doc.tables:
+                        for row in table.rows:
+                            row_text = " | ".join([cell.text for cell in row.cells if cell.text])
+                            if row_text:
+                                text += "\n" + row_text
+            
+            return text
+                    
+        except Exception as e:
+            QMessageBox.critical(self, "Error", f"Failed to load Word document: {str(e)}")
+            logger.error(f"Error loading Word document {file_path}: {e}")
+            return None
 
 class LazyLoader:
     """
@@ -2195,7 +2777,7 @@ class LazyLoader:
                 module = __import__(module_name, fromlist=[class_name] if class_name else [])
                 cls._cache[key] = getattr(module, class_name) if class_name else module
             except ImportError as e:
-                print(f"Failed to load {key}: {e}")
+                logger.error(f"Failed to load {key}: {e}")
                 return None
         return cls._cache[key]
 
@@ -2304,6 +2886,32 @@ class ThreadManager:
             ]
         finally:
             self.mutex.unlock()
+    
+    def stop_all_threads(self, wait_timeout=1000):
+        """
+        Properly stop all active threads with timeout
+        
+        Args:
+            wait_timeout (int): Maximum time in milliseconds to wait for each thread
+        """
+        self.mutex.lock()
+        threads_to_stop = self.active_threads.copy()
+        self.mutex.unlock()
+        
+        for thread in threads_to_stop:
+            if thread.isRunning():
+                # Request interruption
+                thread.requestInterruption()
+                
+                # Wait for thread to finish with timeout
+                if not thread.wait(wait_timeout):
+                    logger.warning(f"Thread {thread.objectName() or 'unnamed'} did not respond to interruption request")
+                    # Force termination only as last resort
+                    thread.terminate()
+                    thread.wait(500)  # Give a small grace period after termination
+        
+        # Final cleanup
+        self.cleanup_finished()
 
 class BaseAnalyzer:
     def __init__(self):
@@ -2324,7 +2932,7 @@ class SentimentAnalyzer(BaseAnalyzer):
         self.analyzers = analyzers
         
     def get_score_type(self):
-        return SCORE_TYPES.get(self.mode, "Score")
+        return AppConstants.SCORE_TYPES.get(self.mode, "Score")
 
 class CustomVaderSentimentIntensityAnalyzer:
     def __init__(self, lexicon_file="vader_lexicon.txt", custom_lexicon_file=None):
@@ -2449,7 +3057,7 @@ class FlairModelLoaderThread(QThread):
             self.finished.emit()
 
     def requestInterruption(self):
-        print("FlairModelLoader: Interruption requested")
+        logger.info("FlairModelLoader: Interruption requested")
         self._interrupt_requested = True
         self._is_loading = False
         super().requestInterruption()
@@ -2732,7 +3340,7 @@ class PerformanceMonitor:
             cpu_available = 100 - psutil.cpu_percent()
             return mem_available, cpu_available
         except Exception as e:
-            print(f"Resource check error: {e}")
+            logger.error(f"Resource check error: {e}")
             return 1000, 50
 
 class ButtonStateManager:
@@ -2812,7 +3420,7 @@ class ImportThread(QThread):
                 if self._is_running:
                     nltk.download('punkt', quiet=True)
         except Exception as e:
-            print(f"Import error: {e}")
+            logger.error(f"Import error: {e}")
         finally:
             if self._is_running:
                 self.finished.emit()
@@ -2836,7 +3444,7 @@ class FileLoaderThread(QThread):
                 return
 
             if not os.path.exists(self.file_path):
-                raise FileNotFoundError(f"File not found: {self.file_path}")
+                raise FileLoadError(f"File not found: {self.file_path}")
 
             file_size = os.path.getsize(self.file_path)
             if file_size > 100 * 1024 * 1024:
@@ -2847,94 +3455,102 @@ class FileLoaderThread(QThread):
         except Exception as e:
             self.file_error.emit(f"Error loading {os.path.basename(self.file_path)}: {str(e)}")
 
-    def process_large_file(self):
-        chunk_processor = ChunkProcessor()
-        
-        def process_chunk(chunk):
-            return chunk.strip() + '\n'
-            
+    def extract_text_from_pdf(self, pdf_path: str) -> str:
+        """Extract text from PDF with proper error handling"""
         try:
-            text_data = ''
-            for progress in chunk_processor.process_file_chunks_mp(
-                self.file_path, process_chunk):
-                self.progress.emit(progress)
-                
-            if not text_data.strip():
-                raise ValueError("File is empty or contains no extractable text")
-                
-            self.file_loaded.emit(self.file_path, text_data)
+            import pypdf
+            text = ""
             
+            try:
+                with open(pdf_path, "rb") as file:
+                    reader = pypdf.PdfReader(file)
+                    if not reader.pages:
+                        raise FileLoadError("PDF contains no readable pages")
+                    
+                    for page in reader.pages:
+                        if self.isInterruptionRequested():
+                            return ""
+                        page_text = page.extract_text()
+                        if page_text:
+                            text += page_text + "\n"
+                return text
+                
+            except pypdf.PdfReadError as e:
+                logger.error(f"PDF read error: {e}")
+                raise FileLoadError(f"Failed to read PDF: {e}")
+            except PermissionError as e:
+                logger.error(f"Permission denied: {e}")
+                raise FileLoadError("Permission denied accessing PDF file")
+                
+        except ImportError as e:
+            logger.error(f"PDF processing module not found: {e}")
+            raise FileLoadError("PDF processing module not available")
         except Exception as e:
-            self.file_error.emit(f"Error processing large file: {str(e)}")
+            logger.error(f"Unexpected error processing PDF: {e}")
+            raise FileLoadError(f"PDF processing failed: {e}")
 
     def process_normal_file(self):
+        """Process normal sized files with improved error handling"""
         try:
             if self.isInterruptionRequested():
                 return
 
             text_data = ""
+            file_ext = Path(self.file_path).suffix.lower()
             
-            if self.file_path.endswith(".txt"):
-                with open(self.file_path, "r", encoding="utf-8") as file:
-                    while True:
-                        if self.isInterruptionRequested():
-                            return
-                        line = file.readline()
-                        if not line:
-                            break
-                        text_data += line
+            try:
+                if file_ext == ".txt":
+                    try:
+                        with open(self.file_path, "r", encoding="utf-8") as file:
+                            text_data = file.read()
+                    except UnicodeDecodeError:
+                        # Fallback to different encoding
+                        with open(self.file_path, "r", encoding="latin-1") as file:
+                            text_data = file.read()
+                            
+                elif file_ext == ".pdf":
+                    text_data = self.extract_text_from_pdf(self.file_path)
+                    
+                elif file_ext in (".doc", ".docx"):
+                    text_data = self.extract_text_from_word(self.file_path)
+                    
+                elif file_ext in (".xlsx", ".xls"):
+                    text_data = self.extract_text_from_excel(self.file_path)
+                    
+                elif file_ext == ".csv":
+                    text_data = self.extract_text_from_csv(self.file_path)
+                    
+                else:
+                    raise FileLoadError(f"Unsupported file format: {file_ext}")
 
-            elif self.file_path.endswith(".pdf"):
-                text_data = self.extract_text_from_pdf(self.file_path)
-                
-            elif self.file_path.endswith((".doc", ".docx")):
-                text_data = self.extract_text_from_word(self.file_path)
-                
-            elif self.file_path.endswith((".xlsx", ".xls")):
-                text_data = self.extract_text_from_excel(self.file_path)
-                
-            elif self.file_path.endswith(".csv"):
-                text_data = self.extract_text_from_csv(self.file_path)
-                
-            else:
-                raise ValueError(f"Unsupported file format: {os.path.splitext(self.file_path)[1]}")
+            except (PermissionError, OSError) as e:
+                logger.error(f"File access error: {e}")
+                raise FileLoadError(f"Cannot access file: {e}")
+            except UnicodeError as e:
+                logger.error(f"Text encoding error: {e}")
+                raise FileLoadError("File contains invalid text encoding")
 
             if self.isInterruptionRequested():
                 return
 
             if not text_data.strip():
-                raise ValueError("File is empty or contains no extractable text")
+                raise FileLoadError("File is empty or contains no extractable text")
 
             self.file_loaded.emit(self.file_path, text_data)
 
+        except FileLoadError as e:
+            logger.error(f"File load error: {e}")
+            self.file_error.emit(str(e))
         except Exception as e:
-            self.file_error.emit(f"Error loading {os.path.basename(self.file_path)}: {str(e)}")
-
-    def extract_text_from_pdf(self, pdf_path):
-        try:
-            import pypdf
-            text = ""
-            with open(pdf_path, "rb") as file:
-                reader = pypdf.PdfReader(file)
-                if not reader.pages:
-                    raise ValueError("PDF contains no readable pages")
-                
-                for page in reader.pages:
-                    if self.isInterruptionRequested():
-                        return ""
-                    page_text = page.extract_text()
-                    if page_text:
-                        text += page_text + "\n"
-            return text
-        except Exception as e:
-            raise RuntimeError(f"PDF processing failed: {str(e)}") from e
+            logger.error(f"Unexpected error: {e}", exc_info=True)
+            self.file_error.emit(f"Unexpected error loading file: {e}")
 
     def extract_text_from_word(self, word_path):
         try:
             import docx
             doc = docx.Document(word_path)
             if not doc.paragraphs:
-                raise ValueError("Word document contains no readable text")
+                raise FileLoadError("Word document contains no readable text")
             
             text = ""
             for p in doc.paragraphs:
@@ -2952,7 +3568,7 @@ class FileLoaderThread(QThread):
                             text += cell.text.strip() + "\n"
                             
             if not text.strip():
-                raise ValueError("No readable text found in document")
+                raise FileLoadError("No readable text found in document")
                 
             text = re.sub(r'\s+', ' ', text)
             text = text.replace('\n\n', '\n').strip()
@@ -2960,7 +3576,8 @@ class FileLoaderThread(QThread):
             return text
             
         except Exception as e:
-            raise RuntimeError(f"Word processing failed: {str(e)}") from e
+            logger.error(f"Word processing failed: {str(e)}")
+            raise FileLoadError(f"Word processing failed: {str(e)}") from e
 
     def extract_text_from_excel(self, excel_path):
         try:
@@ -2968,7 +3585,7 @@ class FileLoaderThread(QThread):
             text_data = ""
             df = pd.read_excel(excel_path, sheet_name=None)
             if not df:
-                raise ValueError("Excel file is empty or unreadable")
+                raise FileLoadError("Excel file is empty or unreadable")
             
             for sheet_name, sheet_df in df.items():
                 if self.isInterruptionRequested():
@@ -2977,21 +3594,23 @@ class FileLoaderThread(QThread):
                 text_data += sheet_df.to_string(index=False, header=True)
             return text_data
         except Exception as e:
-            raise RuntimeError(f"Excel processing failed: {str(e)}") from e
+            logger.error(f"Excel processing failed: {str(e)}")
+            raise FileLoadError(f"Excel processing failed: {str(e)}") from e
 
     def extract_text_from_csv(self, csv_path):
         try:
             import pandas as pd
             df = pd.read_csv(csv_path)
             if df.empty:
-                raise ValueError("CSV file is empty")
+                raise FileLoadError("CSV file is empty")
             
             if self.isInterruptionRequested():
                 return ""
                 
             return df.to_string(index=False, header=True)
         except Exception as e:
-            raise RuntimeError(f"CSV processing failed: {str(e)}") from e
+            logger.error(f"CSV processing failed: {str(e)}")
+            raise FileLoadError(f"CSV processing failed: {str(e)}") from e
 
 class SentimentAnalysisThread(QThread):
     sentiment_analyzed = Signal(dict)
@@ -3019,6 +3638,7 @@ class SentimentAnalysisThread(QThread):
             translated = GoogleTranslator(source="auto", target="en").translate(text)
             return translated
         except Exception as e:
+            logger.error(f"Translation error: {e}")
             return None
 
     def translate_text(self, text):
@@ -3038,12 +3658,14 @@ class SentimentAnalysisThread(QThread):
                     if result:
                         translated.append(result)
                 except Exception as e:
+                    logger.error(f"Translation error: {e}")
                     continue
             return ". ".join(translated)
 
         try:
             return loop.run_until_complete(run_translations())
         except Exception as e:
+            logger.error(f"Translation error: {e}")
             return None
         finally:
             if loop.is_running():
@@ -3083,7 +3705,8 @@ class SentimentAnalysisThread(QThread):
             try:
                 with open(self.temp_file, "r", encoding="utf-8") as f:
                     return f.read()
-            except:
+            except Exception as e:
+                logger.error(f"Error reading cached translation: {e}")
                 return None
         return None
         
@@ -3092,8 +3715,8 @@ class SentimentAnalysisThread(QThread):
         try:
             with open(self.temp_file, "w", encoding="utf-8") as f:
                 f.write(translated_text)
-        except:
-            pass
+        except Exception as e:
+            logger.error(f"Error saving translation: {e}")
 
     def run(self):
         result = {
@@ -3114,7 +3737,8 @@ class SentimentAnalysisThread(QThread):
                     from langdetect import detect
                     detected_lang = detect(self.text_data)
                     needs_translation = detected_lang != "en"
-                except:
+                except Exception as e:
+                    logger.error(f"Language detection error: {e}")
                     needs_translation = False
 
             if needs_translation:
@@ -3404,6 +4028,658 @@ class SummarizeThread(QThread):
             self.summary_ready.emit(summary_text)
         except Exception as e:
             self.error_occurred.emit(str(e))
+
+def safe_open(file_path, mode='r', encoding=None, **kwargs):
+    """
+    Membuka file dengan aman setelah memvalidasi path
+    
+    Args:
+        file_path (str): Path file yang akan dibuka
+        mode (str): Mode untuk membuka file ('r', 'w', dll)
+        encoding (str, optional): Encoding yang digunakan
+        **kwargs: Argumen tambahan untuk fungsi open()
+        
+    Returns:
+        file: File object yang telah dibuka
+        
+    Raises:
+        ValueError: Jika path tidak valid
+        IOError: Jika file tidak dapat dibuka
+    """
+    validated_path = sanitize_path(file_path)
+    return open(validated_path, mode=mode, encoding=encoding, **kwargs)
+
+def safe_read_file(file_path, encoding='utf-8'):
+    """
+    Membaca isi file dengan aman dengan penanganan kesalahan yang lebih baik
+    
+    Args:
+        file_path (str): Path file yang akan dibaca
+        encoding (str): Encoding yang digunakan
+        
+    Returns:
+        str: Isi file
+        
+    Raises:
+        FileNotFoundError: Jika file tidak ditemukan
+        PermissionError: Jika tidak ada izin untuk membaca file
+        UnicodeDecodeError: Jika file tidak dapat didekode dengan encoding yang diberikan
+        IOError: Jika file tidak dapat dibaca karena alasan lain
+    """
+    try:
+        validated_path = sanitize_path(file_path)
+        
+        # Periksa apakah file ada
+        if not os.path.exists(validated_path):
+            raise FileNotFoundError(f"File not found: {validated_path}")
+        
+        # Periksa apakah file dapat dibaca
+        if not os.access(validated_path, os.R_OK):
+            raise PermissionError(f"Permission denied: {validated_path}")
+        
+        # Periksa apakah file terlalu besar
+        file_size = os.path.getsize(validated_path)
+        if file_size > 100 * 1024 * 1024:  # 100MB
+            raise IOError(f"File too large: {file_size} bytes")
+        
+        # Baca file
+        with open(validated_path, 'r', encoding=encoding) as f:
+            return f.read()
+            
+    except UnicodeDecodeError:
+        # Re-raise untuk penanganan khusus di level yang lebih tinggi
+        raise
+    except Exception as e:
+        logger.error(f"Error reading file {file_path}: {e}")
+        raise FileLoadError(f"Tidak dapat membaca file: {e}")
+
+def safe_write_file(file_path, content, encoding='utf-8'):
+    """
+    Menulis ke file dengan aman
+    
+    Args:
+        file_path (str): Path file yang akan ditulis
+        content (str): Konten yang akan ditulis
+        encoding (str): Encoding yang digunakan
+        
+    Raises:
+        ValueError: Jika path tidak valid
+        IOError: Jika file tidak dapat ditulis
+    """
+    try:
+        with safe_open(file_path, 'w', encoding=encoding) as f:
+            f.write(content)
+    except Exception as e:
+        logger.error(f"Error writing to file {file_path}: {e}")
+        raise IOError(f"Tidak dapat menulis ke file: {e}")
+
+class LayoutManager:
+    """Kelas untuk mengelola pembuatan layout yang umum digunakan"""
+    
+    @staticmethod
+    def create_form_layout(parent, fields):
+        """
+        Membuat form layout dengan label dan input fields
+        
+        Args:
+            parent: Widget parent
+            fields: List of tuples (label_text, input_widget, [optional_tooltip])
+            
+        Returns:
+            QGridLayout: Layout yang sudah dikonfigurasi
+        """
+        layout = QGridLayout()
+        
+        for row, field_info in enumerate(fields):
+            label_text = field_info[0]
+            input_widget = field_info[1]
+            
+            label = QLabel(label_text, parent)
+            layout.addWidget(label, row, 0)
+            layout.addWidget(input_widget, row, 1)
+            
+            # Tambahkan tooltip jika ada
+            if len(field_info) > 2 and field_info[2]:
+                input_widget.setToolTip(field_info[2])
+                label.setToolTip(field_info[2])
+        
+        return layout
+    
+    @staticmethod
+    def create_button_row(parent, buttons):
+        """
+        Membuat row dengan beberapa button
+        
+        Args:
+            parent: Widget parent
+            buttons: List of tuples (button_text, callback_function, [optional_tooltip])
+            
+        Returns:
+            QHBoxLayout: Layout dengan button yang sudah dikonfigurasi
+        """
+        layout = QHBoxLayout()
+        
+        for btn_info in buttons:
+            btn_text = btn_info[0]
+            callback = btn_info[1]
+            
+            button = QPushButton(btn_text, parent)
+            button.clicked.connect(callback)
+            
+            # Tambahkan tooltip jika ada
+            if len(btn_info) > 2 and btn_info[2]:
+                button.setToolTip(btn_info[2])
+                
+            layout.addWidget(button)
+        
+        return layout
+    
+    @staticmethod
+    def create_group_box(parent, title, inner_layout):
+        """
+        Membuat group box dengan layout di dalamnya
+        
+        Args:
+            parent: Widget parent
+            title: Judul group box
+            inner_layout: Layout yang akan dimasukkan ke dalam group box
+            
+        Returns:
+            QGroupBox: Group box yang sudah dikonfigurasi
+        """
+        group_box = QGroupBox(title, parent)
+        group_box.setLayout(inner_layout)
+        return group_box
+
+class DialogFactory:
+    """Factory class untuk membuat dialog yang umum digunakan"""
+    
+    @staticmethod
+    def create_info_dialog(parent, title, content, modal=True, min_size=(500, 400)):
+        """
+        Membuat dialog informasi dengan QTextBrowser
+        
+        Args:
+            parent: Widget parent
+            title: Judul dialog
+            content: Konten HTML untuk ditampilkan
+            modal: Apakah dialog bersifat modal
+            min_size: Ukuran minimum dialog (width, height)
+            
+        Returns:
+            QDialog: Dialog yang sudah dikonfigurasi
+        """
+        dialog = QDialog(parent)
+        dialog.setWindowTitle(title)
+        dialog.setMinimumSize(*min_size)
+        
+        if modal:
+            dialog.setWindowModality(Qt.ApplicationModal)
+        else:
+            dialog.setWindowModality(Qt.NonModal)
+            
+        dialog.setSizeGripEnabled(True)
+        
+        layout = QVBoxLayout()
+        
+        text_browser = QTextBrowser()
+        text_browser.setHtml(content)
+        text_browser.setOpenExternalLinks(True)
+        text_browser.setReadOnly(True)
+        layout.addWidget(text_browser)
+        
+        close_button = QPushButton("Close")
+        close_button.clicked.connect(dialog.accept)
+        layout.addWidget(close_button)
+        
+        dialog.setLayout(layout)
+        return dialog
+    
+    @staticmethod
+    def create_input_dialog(parent, title, fields, on_accept, modal=True):
+        """
+        Membuat dialog input dengan multiple fields
+        
+        Args:
+            parent: Widget parent
+            title: Judul dialog
+            fields: List of tuples (label_text, input_widget_type, default_value)
+            on_accept: Callback function when dialog is accepted
+            modal: Apakah dialog bersifat modal
+            
+        Returns:
+            QDialog: Dialog yang sudah dikonfigurasi
+        """
+        dialog = QDialog(parent)
+        dialog.setWindowTitle(title)
+        
+        if modal:
+            dialog.setWindowModality(Qt.ApplicationModal)
+        else:
+            dialog.setWindowModality(Qt.NonModal)
+            
+        layout = QVBoxLayout()
+        form_layout = QGridLayout()
+        
+        input_widgets = {}
+        
+        for row, (label_text, widget_type, default_value) in enumerate(fields):
+            label = QLabel(label_text)
+            form_layout.addWidget(label, row, 0)
+            
+            if widget_type == "line_edit":
+                widget = QLineEdit(default_value)
+            elif widget_type == "combo_box":
+                widget = QComboBox()
+                widget.addItems(default_value)
+            elif widget_type == "spin_box":
+                widget = QSpinBox()
+                widget.setValue(default_value)
+            else:
+                widget = QLineEdit(str(default_value))
+                
+            form_layout.addWidget(widget, row, 1)
+            input_widgets[label_text] = widget
+            
+        layout.addLayout(form_layout)
+        
+        button_layout = QHBoxLayout()
+        ok_button = QPushButton("OK")
+        cancel_button = QPushButton("Cancel")
+        
+        ok_button.clicked.connect(lambda: on_accept(dialog, input_widgets))
+        cancel_button.clicked.connect(dialog.reject)
+        
+        button_layout.addWidget(ok_button)
+        button_layout.addWidget(cancel_button)
+        layout.addLayout(button_layout)
+        
+        dialog.setLayout(layout)
+        return dialog
+
+class ThreadFactory:
+    """Factory class untuk membuat dan mengonfigurasi thread"""
+    
+    @staticmethod
+    def create_worker_thread(worker, on_finished=None, on_progress=None, on_error=None, thread_name=None):
+        """
+        Membuat dan mengonfigurasi worker thread
+        
+        Args:
+            worker: Worker object yang akan dijalankan di thread
+            on_finished: Callback ketika thread selesai
+            on_progress: Callback untuk update progress
+            on_error: Callback ketika terjadi error
+            thread_name: Nama thread untuk debugging
+            
+        Returns:
+            QThread: Thread yang sudah dikonfigurasi
+        """
+        thread = QThread()
+        if thread_name:
+            thread.setObjectName(thread_name)
+            
+        worker.moveToThread(thread)
+        thread.started.connect(worker.run)
+        
+        # Connect signals
+        worker.finished.connect(thread.quit)
+        worker.finished.connect(worker.deleteLater)
+        thread.finished.connect(thread.deleteLater)
+        
+        # Connect custom callbacks
+        if on_finished:
+            worker.finished.connect(on_finished)
+        if on_progress and hasattr(worker, 'progress'):
+            worker.progress.connect(on_progress)
+        if on_error and hasattr(worker, 'error'):
+            worker.error.connect(on_error)
+            
+        return thread
+
+class FileOperations:
+    """Kelas untuk mengelola operasi file dengan validasi path"""
+    
+    @staticmethod
+    def load_text_file(parent, file_path):
+        """
+        Load text from file with proper validation and enhanced error handling
+        
+        Args:
+            parent: Parent widget for error messages
+            file_path: Path to the file
+            
+        Returns:
+            str: File content or empty string if error
+        """
+        try:
+            # Validasi ekstensi file
+            ext = Path(file_path).suffix.lower()
+            supported_exts = ['.txt', '.csv', '.md', '.json', '.html', '.xml']
+            
+            if ext not in supported_exts:
+                logger.warning(f"Unsupported file extension: {ext}")
+                reply = QMessageBox.question(
+                    parent,
+                    "Unsupported File Type",
+                    f"The file type '{ext}' may not be supported. Try to open anyway?",
+                    QMessageBox.Yes | QMessageBox.No,
+                    QMessageBox.No
+                )
+                if reply == QMessageBox.No:
+                    return None
+            
+            # Coba baca file dengan encoding utf-8
+            try:
+                content = safe_read_file(file_path, encoding='utf-8')
+            except UnicodeDecodeError:
+                # Fallback ke encoding lain jika utf-8 gagal
+                logger.info(f"UTF-8 decoding failed for {file_path}, trying other encodings")
+                encodings = ['latin-1', 'cp1252', 'iso-8859-1']
+                
+                for encoding in encodings:
+                    try:
+                        content = safe_read_file(file_path, encoding=encoding)
+                        logger.info(f"Successfully decoded with {encoding}")
+                        break
+                    except UnicodeDecodeError:
+                        continue
+                else:
+                    # Jika semua encoding gagal
+                    raise UnicodeDecodeError("All encodings failed", b"", 0, 1, "Cannot decode file")
+            
+            # Periksa apakah file kosong
+            if not content.strip():
+                logger.warning(f"Empty file: {file_path}")
+                QMessageBox.warning(
+                    parent, 
+                    "Empty File", 
+                    "The file appears to be empty. Please select a file with content."
+                )
+                return None
+            
+            # Periksa ukuran file
+            if len(content) > 10 * 1024 * 1024:  # 10MB
+                logger.warning(f"Large file detected: {file_path} ({len(content)} bytes)")
+                reply = QMessageBox.question(
+                    parent,
+                    "Large File",
+                    "This file is very large and may cause performance issues. Continue loading?",
+                    QMessageBox.Yes | QMessageBox.No,
+                    QMessageBox.No
+                )
+                if reply == QMessageBox.No:
+                    return None
+            
+            parent.statusBar().showMessage(f"Loaded: {os.path.basename(file_path)}")
+            return content
+            
+        except FileNotFoundError:
+            QMessageBox.critical(
+                parent, 
+                "File Not Found", 
+                f"The file '{os.path.basename(file_path)}' could not be found. It may have been moved or deleted."
+            )
+            logger.error(f"File not found: {file_path}")
+            return None
+            
+        except PermissionError:
+            QMessageBox.critical(
+                parent, 
+                "Permission Denied", 
+                f"You don't have permission to access '{os.path.basename(file_path)}'. Check file permissions."
+            )
+            logger.error(f"Permission denied: {file_path}")
+            return None
+            
+        except UnicodeDecodeError as e:
+            QMessageBox.critical(
+                parent, 
+                "Encoding Error", 
+                f"Could not decode the file. The file may be binary or use an unsupported encoding."
+            )
+            logger.error(f"Unicode decode error for {file_path}: {e}")
+            return None
+            
+        except Exception as e:
+            QMessageBox.critical(
+                parent, 
+                "Error", 
+                f"Failed to load file: {str(e)}\n\nTry checking if the file is accessible and not corrupted."
+            )
+            logger.error(f"Error loading file {file_path}: {e}")
+            return None
+    
+    @staticmethod
+    def save_text_file(parent, file_path, content):
+        """
+        Save text to file with proper validation
+        
+        Args:
+            parent: Parent widget for error messages
+            file_path: Path to save the file
+            content: Content to save
+            
+        Returns:
+            bool: True if successful, False otherwise
+        """
+        try:
+            safe_write_file(file_path, content)
+            parent.statusBar().showMessage(f"Saved: {os.path.basename(file_path)}")
+            return True
+        except Exception as e:
+            QMessageBox.critical(parent, "Error", f"Failed to save file: {str(e)}")
+            logger.error(f"Error saving file {file_path}: {e}")
+            return False
+    
+    @staticmethod
+    def open_file_dialog(parent, title="Open File", file_filter=None):
+        """
+        Show open file dialog with path validation
+        
+        Args:
+            parent: Parent widget
+            title: Dialog title
+            file_filter: File filter string
+            
+        Returns:
+            str: Selected file path or None
+        """
+        options = QFileDialog.Options()
+        
+        if file_filter is None:
+            file_filter = (
+                "Text Files (*.txt);;CSV Files (*.csv);;Markdown (*.md);;"
+                "JSON Files (*.json);;HTML Files (*.html);;XML Files (*.xml);;"
+                "All Files (*)"
+            )
+        
+        file_path, _ = QFileDialog.getOpenFileName(
+            parent, title, "", file_filter, options=options
+        )
+        
+        if file_path:
+            try:
+                return sanitize_path(file_path)
+            except ValueError as e:
+                QMessageBox.critical(parent, "Security Error", str(e))
+                logger.warning(f"Blocked access to file: {file_path}")
+                return None
+        return None
+    
+    @staticmethod
+    def save_file_dialog(parent, title="Save File", file_filter="All Files (*)"):
+        """
+        Show save file dialog with path validation
+        
+        Args:
+            parent: Parent widget
+            title: Dialog title
+            file_filter: File filter string
+            
+        Returns:
+            str: Selected file path or None
+        """
+        options = QFileDialog.Options()
+        file_path, _ = QFileDialog.getSaveFileName(
+            parent, title, "", file_filter, options=options
+        )
+        
+        if file_path:
+            try:
+                return sanitize_path(file_path)
+            except ValueError as e:
+                QMessageBox.critical(parent, "Security Error", str(e))
+                logger.warning(f"Blocked access to file: {file_path}")
+                return None
+        return None
+
+def create_wordcloud_settings_ui(self):
+    """Create wordcloud settings UI using LayoutManager"""
+    group_box = QGroupBox("WordCloud Settings", self)
+    layout = QVBoxLayout()
+    
+    # Create form fields
+    self.width_input = QSpinBox(self)
+    self.width_input.setRange(100, 3000)
+    self.width_input.setValue(800)
+    
+    self.height_input = QSpinBox(self)
+    self.height_input.setRange(100, 3000)
+    self.height_input.setValue(400)
+    
+    self.max_words_input = QSpinBox(self)
+    self.max_words_input.setRange(10, 1000)
+    self.max_words_input.setValue(200)
+    
+    self.bg_color_button = QPushButton("Background Color", self)
+    self.bg_color_button.clicked.connect(self.choose_bg_color)
+    self.bg_color = "white"
+    
+    fields = [
+        ("Width:", self.width_input, "Width of the word cloud image"),
+        ("Height:", self.height_input, "Height of the word cloud image"),
+        ("Max Words:", self.max_words_input, "Maximum number of words to include"),
+        ("Background:", self.bg_color_button, "Background color of the word cloud")
+    ]
+    
+    form_layout = LayoutManager.create_form_layout(self, fields)
+    layout.addLayout(form_layout)
+    
+    # Create buttons
+    buttons = [
+        ("Generate", self.generate_wordcloud, "Generate word cloud from text"),
+        ("Save Image", self.save_wordcloud, "Save word cloud as image file")
+    ]
+    
+    button_layout = LayoutManager.create_button_row(self, buttons)
+    layout.addLayout(button_layout)
+    
+    group_box.setLayout(layout)
+    return group_box
+
+class CacheManager:
+    """
+    Kelas untuk mengelola pembersihan cache secara manual
+    berdasarkan penggunaan memori sistem
+    """
+    
+    def __init__(self, threshold_percent=75, check_interval=60000):
+        """
+        Inisialisasi cache manager
+        
+        Args:
+            threshold_percent (int): Persentase penggunaan memori yang memicu pembersihan cache
+            check_interval (int): Interval pengecekan memori dalam milidetik
+        """
+        self.threshold_percent = threshold_percent
+        self.check_interval = check_interval
+        self.cached_functions = []
+        self.timer = None
+        
+    def register_cached_function(self, func):
+        """
+        Mendaftarkan fungsi yang menggunakan cache
+        
+        Args:
+            func: Fungsi dengan dekorator lru_cache
+        """
+        if hasattr(func, 'cache_clear'):
+            self.cached_functions.append(func)
+            logger.debug(f"Registered cached function: {func.__name__}")
+        else:
+            logger.warning(f"Function {func.__name__} has no cache_clear method")
+    
+    def register_cached_property(self, instance, property_name):
+        """
+        Mendaftarkan cached_property
+        
+        Args:
+            instance: Instance objek yang memiliki cached_property
+            property_name: Nama property yang di-cache
+        """
+        if hasattr(instance.__class__, property_name):
+            # Simpan referensi ke instance dan nama property
+            self.cached_functions.append((instance, property_name))
+            logger.debug(f"Registered cached property: {property_name}")
+        else:
+            logger.warning(f"Property {property_name} is not found in class")
+    
+    def clear_all_caches(self):
+        """Membersihkan semua cache yang terdaftar"""
+        cleared_count = 0
+        
+        for item in self.cached_functions:
+            try:
+                if isinstance(item, tuple):
+                    # Ini adalah cached_property
+                    instance, prop_name = item
+                    # Reset atribut cache untuk memaksa recalculation
+                    if hasattr(instance, f"_{prop_name}"):
+                        delattr(instance, f"_{prop_name}")
+                        cleared_count += 1
+                else:
+                    # Ini adalah fungsi dengan lru_cache
+                    item.cache_clear()
+                    cleared_count += 1
+            except Exception as e:
+                logger.error(f"Error clearing cache: {e}")
+        
+        # Juga bersihkan cache LazyLoader
+        if 'LazyLoader' in globals() and hasattr(LazyLoader, '_cache'):
+            LazyLoader._cache.clear()
+            cleared_count += 1
+            
+        logger.info(f"Cleared {cleared_count} caches due to high memory usage")
+        
+    def check_memory_usage(self):
+        """
+        Memeriksa penggunaan memori dan membersihkan cache jika melebihi threshold
+        """
+        memory_percent = psutil.virtual_memory().percent
+        
+        if memory_percent > self.threshold_percent:
+            logger.warning(f"Memory usage high ({memory_percent}%), clearing caches")
+            self.clear_all_caches()
+            
+            # Paksa garbage collection
+            import gc
+            gc.collect()
+    
+    def start_monitoring(self):
+        """Mulai memantau penggunaan memori secara periodik"""
+        if self.timer is None:
+            self.timer = QTimer()
+            self.timer.timeout.connect(self.check_memory_usage)
+            self.timer.start(self.check_interval)
+            logger.info(f"Started memory monitoring (threshold: {self.threshold_percent}%)")
+    
+    def stop_monitoring(self):
+        """Hentikan pemantauan memori"""
+        if self.timer is not None:
+            self.timer.stop()
+            self.timer = None
+            logger.info("Stopped memory monitoring")
 
 if __name__ == "__main__":
     app = QApplication(sys.argv)

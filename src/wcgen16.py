@@ -36,7 +36,7 @@ from PySide6.QtWidgets import (
     QHBoxLayout, QGroupBox
 )
 from PySide6.QtCore import QThread, Signal, Qt, QTimer, QMutex, QThreadPool, QObject
-from PySide6.QtGui import QIcon, QGuiApplication, QPixmap
+from PySide6.QtGui import QIcon, QGuiApplication, QPixmap, QPainter, QColor
 import matplotlib
 matplotlib.use("QtAgg")
 import numpy as np
@@ -176,7 +176,7 @@ def sanitize_path(path):
         abs_path = os.path.abspath(path)
         if not any(abs_path.startswith(allowed_dir) for allowed_dir in allowed_dirs):
             logger.warning(f"Path traversal attempt detected: {path}")
-            raise ValueError(f"Path tidak diizinkan: {path}")
+            raise ValueError(f"Path not allowed: {path}")
     
     return path
 
@@ -208,6 +208,9 @@ class MainClass(QMainWindow):
         super().__init__()
         
         self.user_name = os.getlogin()
+        
+        # Inisialisasi statusbar dengan indikator koneksi
+        self.setup_statusbar()
         
         # Inisialisasi dasar
         self.active_threads = []
@@ -286,6 +289,67 @@ class MainClass(QMainWindow):
         warnings.showwarning = self.warning_handler.handle_warning        
 
         self.button_manager = ButtonStateManager(self)
+
+    def setup_statusbar(self):
+        """Setup statusbar dengan indikator koneksi"""
+        statusbar = self.statusBar()
+        statusbar.setStyleSheet("""
+            QStatusBar {
+                border-top: 1px solid #c0c0c0;
+                background: transparent;
+                padding: 2px;
+                font-size: 9pt;
+            }
+        """)
+        
+        # Buat indikator koneksi
+        self.connection_indicator = QLabel()
+        self.connection_indicator.setFixedSize(16, 16)
+        self.update_connection_status()
+        
+        # Timer untuk update status koneksi
+        self.connection_timer = QTimer(self)
+        self.connection_timer.timeout.connect(self.update_connection_status)
+        self.connection_timer.start(10000)  # Update setiap 3 detik
+        
+        # Tambahkan widget ke statusbar
+        statusbar.addPermanentWidget(self.connection_indicator)
+        
+        # Set pesan default
+        statusbar.showMessage("Ready")
+    
+    def update_connection_status(self):
+        """Update indikator status koneksi"""
+        if is_connected():
+            self.connection_indicator.setPixmap(self.get_connection_icon("connected"))
+            self.connection_indicator.setToolTip("Internet Connected")
+        else:
+            self.connection_indicator.setPixmap(self.get_connection_icon("disconnected"))
+            self.connection_indicator.setToolTip("No Internet Connection")
+    
+    def get_connection_icon(self, status):
+        """Generate ikon koneksi menggunakan QPainter"""
+        pixmap = QPixmap(16, 16)
+        pixmap.fill(Qt.transparent)
+        
+        try:
+            painter = QPainter(pixmap)
+            painter.setRenderHint(QPainter.Antialiasing)
+            
+            if status == "connected":
+                # Gambar ikon koneksi aktif (lingkaran hijau)
+                painter.setPen(Qt.NoPen)
+                painter.setBrush(QColor("#2ecc71"))  # Hijau
+                painter.drawEllipse(2, 2, 12, 12)
+            else:
+                # Gambar ikon tidak terkoneksi (lingkaran merah)
+                painter.setPen(Qt.NoPen)
+                painter.setBrush(QColor("#e74c3c"))  # Merah
+                painter.drawEllipse(2, 2, 12, 12)
+        finally:
+            painter.end()
+            
+        return pixmap
 
     @cached_property 
     def token_opts(self):
@@ -460,8 +524,9 @@ class MainClass(QMainWindow):
     def setup_timers(self):
         """Setup and optimize timers"""
         self.cleanup_timer = QTimer(self)
+        # Jalankan cleanup setiap 30 detik
         self.cleanup_timer.timeout.connect(self.thread_manager.cleanup_finished)
-        self.cleanup_timer.start(10000)
+        self.cleanup_timer.start(30000)  # 30 detik
         
     def initUI(self):
         """Use this if not include user name :
@@ -470,7 +535,7 @@ class MainClass(QMainWindow):
         """
         WIN_TITLE = base64.b64decode("VGV4dHBsb3JhICh2MS42KSBbe31d".encode()).decode().format(self.user_name)
         self.setWindowTitle(WIN_TITLE)
-        self.setFixedSize(550, 850)
+        self.setFixedSize(550, 870)  # Tambah sedikit tinggi untuk statusbar
 
         layout = QVBoxLayout()
 
@@ -1007,14 +1072,16 @@ class MainClass(QMainWindow):
             ]
             self.threads_mutex.unlock()
 
-            report = f"""
-            <b>Termination Report:</b>
-            • Total threads: {len(all_threads)}
-            • Successfully stopped: {len(stopped_threads)}
-            • Failed to stop: {len(failed_to_stop)}
-            • Remaining active: {len(self.active_threads)}
-            """
-            QMessageBox.information(self, "Process Report", report)
+            # report = f"""
+            # <b>Termination Report:</b>
+            # • Total threads: {len(all_threads)}
+            # • Successfully stopped: {len(stopped_threads)}
+            # • Failed to stop: {len(failed_to_stop)}
+            # • Remaining active: {len(self.active_threads)}
+            # """
+            # QMessageBox.information(self, "Process Report", report)
+            report = f"Threads: {len(all_threads)} • Stopped: {len(stopped_threads)} • Failed: {len(failed_to_stop)} • Active: {len(self.active_threads)}"
+            self.statusBar().showMessage(report, 3000)
 
         except Exception as e:
             logger.error(f"Critical termination error: {str(e)}")
@@ -1091,7 +1158,7 @@ class MainClass(QMainWindow):
             reply = QMessageBox.question(
                 self, 
                 'Confirm Exit',
-                'There are active processes running. Are you sure you want to exit?',
+                'There are active processes running.\n Are you sure you want to exit?',
                 QMessageBox.Yes | QMessageBox.No, 
                 QMessageBox.No
             )
@@ -1124,48 +1191,35 @@ class MainClass(QMainWindow):
         # Hentikan pemantauan memori
         self.cache_manager.stop_monitoring()
         
-        # Bersihkan semua cache
-        self.cache_manager.clear_all_caches()
+        # Hentikan semua thread dengan ThreadManager
+        self.thread_manager.stop_all_threads()
         
-        try:
-            self.threads_mutex.lock()
-            try:
-                active_threads = self.active_threads.copy()
-                for thread in active_threads:
-                    try:
-                        if thread.isRunning():
-                            thread.requestInterruption()
-                            thread.quit()
-                            if not thread.wait(500):
-                                thread.terminate()
-                    except:
-                        pass
-                self.active_threads.clear()
-            finally:
-                self.threads_mutex.unlock()
-
-            self.get_wordcloud.cache_clear()
-            LazyLoader._cache.clear()
-            self._cached_models.clear()
-            self._cached_fonts.clear()
-            self._cached_colormaps.clear()
-
-            self.resource_manager.cleanup()
-
-            if torch.cuda.is_available():
-                torch.cuda.empty_cache()
-
-            import matplotlib.pyplot as plt
-            plt.close('all')
-
-            temp_dir = Path(tempfile.gettempdir()) / "textplora_cache"
-            if (temp_dir.exists()):
-                shutil.rmtree(temp_dir, ignore_errors=True)
-
-        except Exception as e:
-            logger.error(f"Cleanup error: {e}")
-        finally:
-            QApplication.processEvents()
+        # Bersihkan cache
+        self.cache_manager.clear_all_caches()
+        self.get_wordcloud.cache_clear()
+        LazyLoader._cache.clear()
+        self._cached_models.clear()
+        self._cached_fonts.clear()
+        self._cached_colormaps.clear()
+        
+        # Bersihkan resource
+        self.resource_manager.cleanup()
+        
+        # Bersihkan CUDA cache jika tersedia
+        if torch.cuda.is_available():
+            torch.cuda.empty_cache()
+        
+        # Tutup semua figure matplotlib
+        import matplotlib.pyplot as plt
+        plt.close('all')
+        
+        # Bersihkan temporary files
+        temp_dir = Path(tempfile.gettempdir()) / "textplora_cache"
+        if temp_dir.exists():
+            shutil.rmtree(temp_dir, ignore_errors=True)
+        
+        # Proses events yang tersisa
+        QApplication.processEvents()
 
     def show_about(self):
         """Show about dialog using DialogFactory"""
@@ -2863,13 +2917,19 @@ class ThreadManager:
         self.mutex = QMutex()
         
     def add_thread(self, thread):
+        """Menambahkan thread ke daftar thread aktif"""
         self.mutex.lock()
         try:
+            if not isinstance(thread, QThread):
+                raise TypeError("Thread harus merupakan instance dari QThread")
+                
+            thread.finished.connect(lambda: self.remove_thread(thread))
             self.active_threads.append(thread)
         finally:
             self.mutex.unlock()
             
     def remove_thread(self, thread):
+        """Menghapus thread dari daftar thread aktif"""
         self.mutex.lock()
         try:
             if thread in self.active_threads:
@@ -2878,40 +2938,38 @@ class ThreadManager:
             self.mutex.unlock()
             
     def cleanup_finished(self):
+        """Membersihkan thread yang sudah selesai dari daftar"""
         self.mutex.lock()
         try:
-            self.active_threads = [
-                t for t in self.active_threads 
-                if t.isRunning() and not t.isFinished()
-            ]
+            # Salin list untuk menghindari modifikasi saat iterasi
+            for thread in self.active_threads[:]:
+                if not thread.isRunning() or thread.isFinished():
+                    self.remove_thread(thread)
+                    try:
+                        thread.deleteLater()
+                    except:
+                        pass
         finally:
             self.mutex.unlock()
-    
+            
     def stop_all_threads(self, wait_timeout=1000):
-        """
-        Properly stop all active threads with timeout
-        
-        Args:
-            wait_timeout (int): Maximum time in milliseconds to wait for each thread
-        """
+        """Menghentikan semua thread yang aktif"""
         self.mutex.lock()
-        threads_to_stop = self.active_threads.copy()
-        self.mutex.unlock()
-        
-        for thread in threads_to_stop:
-            if thread.isRunning():
-                # Request interruption
-                thread.requestInterruption()
-                
-                # Wait for thread to finish with timeout
-                if not thread.wait(wait_timeout):
-                    logger.warning(f"Thread {thread.objectName() or 'unnamed'} did not respond to interruption request")
-                    # Force termination only as last resort
-                    thread.terminate()
-                    thread.wait(500)  # Give a small grace period after termination
-        
-        # Final cleanup
-        self.cleanup_finished()
+        try:
+            for thread in self.active_threads[:]:  # Copy list untuk iterasi yang aman
+                if thread.isRunning():
+                    thread.requestInterruption()
+                    thread.quit()
+                    if not thread.wait(wait_timeout):
+                        logger.warning(f"Thread {thread.objectName() or 'unnamed'} tidak merespons, memaksa berhenti")
+                        thread.terminate()
+                self.remove_thread(thread)
+                try:
+                    thread.deleteLater()
+                except:
+                    pass
+        finally:
+            self.mutex.unlock()
 
 class BaseAnalyzer:
     def __init__(self):
@@ -3743,7 +3801,7 @@ class SentimentAnalysisThread(QThread):
 
             if needs_translation:
                 if not is_connected():
-                    self.offline_warning.emit("Translation required but no internet connection")
+                    self.offline_warning.emit("Your text is not in English.\nTranslation required but no internet connection.\nPlease use the mode with custom lexicon/model instead.")
                     return
 
                 cached = self.get_cached_translation()

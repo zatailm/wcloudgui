@@ -33,7 +33,7 @@ from PySide6.QtWidgets import (
     QVBoxLayout, QGridLayout, QWidget, QLineEdit, QComboBox, QSpinBox, QDialog,
     QTextEdit, QProgressBar, QFrame, QColorDialog, QInputDialog, QTextBrowser,
     QHBoxLayout, QGroupBox, QTabWidget, QTableWidget, QTableWidgetItem, QHeaderView, QStyle,
-    QDialogButtonBox, QSizePolicy, QTreeWidget, QTreeWidgetItem
+    QDialogButtonBox, QSizePolicy, QTreeWidget, QTreeWidgetItem, QScrollArea
 )
 from PySide6.QtCore import QThread, Signal, Qt, QTimer, QMutex, QThreadPool, QObject, QMutexLocker
 from PySide6.QtGui import QIcon, QGuiApplication, QPixmap, QPainter, QColor, QLinearGradient
@@ -46,7 +46,7 @@ from matplotlib.colors import LinearSegmentedColormap
 from sumy.parsers.plaintext import PlaintextParser
 from sumy.nlp.tokenizers import Tokenizer
 from sumy.summarizers.lsa import LsaSummarizer
-os.environ["QT_SCALE_FACTOR"] = "1.0"
+os.environ["QT_SCALE_FACTOR"] = "1"
 """FUNGSI SETUP & UTILITAS GLOBAL"""
 def setup_logging():
     """Setup application logging with enhanced formatting"""
@@ -1369,6 +1369,7 @@ class SentimentAnalysisService(QObject):
     model_loading_progress = Signal(int)
     model_loaded = Signal(str, object)
     model_loading_failed = Signal(str, str)
+    sentiment_timeline_ready = Signal(object)
     def __init__(self, parent=None):
         QObject.__init__(self, parent)
         self.parent = parent
@@ -1426,7 +1427,10 @@ class SentimentAnalysisService(QObject):
                 self.analysis_thread.wait(500)
             cache_key = f"{hashlib.md5(text_data.encode()).hexdigest()}_{sentiment_mode}"
             if cache_key in self._cached_results:
-                self.analysis_complete.emit(self._cached_results[cache_key])
+                cached_result = self._cached_results[cache_key]
+                self.analysis_complete.emit(cached_result)
+                if 'sentiment_timeline' in cached_result:
+                    self.sentiment_timeline_ready.emit(cached_result['sentiment_timeline'])
                 return
             self.analysis_started.emit()
             self.analysis_thread = SentimentAnalysisThread(
@@ -1444,6 +1448,9 @@ class SentimentAnalysisService(QObject):
             self.analysis_thread.offline_warning.connect(
                 lambda msg: self.error_occurred.emit(f"Offline warning: {msg}")
             )
+            self.analysis_thread.sentiment_timeline_ready.connect(
+                lambda timeline: self.sentiment_timeline_ready.emit(timeline)
+            )
             if translation_handler:
                 self.analysis_thread.translation_progress.connect(translation_handler)
             self.analysis_thread.start()
@@ -1458,6 +1465,14 @@ class SentimentAnalysisService(QObject):
                 oldest_key = next(iter(self._cached_results))
                 del self._cached_results[oldest_key]
         self.analysis_complete.emit(result)
+    def get_cached_timeline(self, text_data, sentiment_mode):
+        """Get cached sentiment timeline if available"""
+        cache_key = f"{hashlib.md5(text_data.encode()).hexdigest()}_{sentiment_mode}"
+        if cache_key in self._cached_results:
+            result = self._cached_results[cache_key]
+            if 'sentiment_timeline' in result:
+                return result['sentiment_timeline']
+        return None
     def cancel_analysis(self):
         """Cancel ongoing analysis"""
         if self.analysis_thread and self.analysis_thread.isRunning():
@@ -1477,6 +1492,7 @@ class SentimentAnalysisService(QObject):
         self.cancel_analysis()
         self.cancel_model_loading()
         self._cached_results.clear()
+        self._cached_models.clear()
 class TextAnalysisService(QObject):
     """Service untuk text analysis dan statistik"""
     analysis_started = Signal()
@@ -1515,7 +1531,7 @@ class TextAnalysisService(QObject):
         try:
             dialog = QDialog(parent_widget)
             dialog.setWindowTitle("Text Statistics")
-            dialog.setMinimumSize(600, 400)
+            dialog.setMinimumSize(800, 750)
             layout = QVBoxLayout()
             stopwords_info = QLabel()
             if stats.get('stopwords_removed', False):
@@ -1615,68 +1631,138 @@ class TextAnalysisService(QObject):
         layout = QVBoxLayout()
         word_freq = stats.get('word_freq', {})
         most_common = stats.get('most_common_words', [])
+        
         if most_common:
             try:
+                # Create visualization container with strict size control
+                viz_container = QWidget()
+                viz_container.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Fixed)
+                viz_container.setFixedHeight(350)
+                viz_layout = QVBoxLayout(viz_container)
+                viz_layout.setContentsMargins(0, 0, 0, 0)
+                
+                # Import and setup matplotlib
                 from matplotlib.figure import Figure
                 from matplotlib.backends.backend_qt5agg import FigureCanvasQTAgg
                 import matplotlib.ticker as ticker
+                
+                # Get top 15 words
                 top_words = most_common[:15]
-                figure = Figure(figsize=(9, 5), dpi=100)
+                
+                # Create figure with fixed DPI
+                figure = Figure(dpi=100)
                 canvas = FigureCanvasQTAgg(figure)
-                ax = figure.add_subplot(111)
-                words = [word for word, count in top_words]
-                counts = [count for word, count in top_words]
-                bar_color = '#4285F4'
-                bars = ax.barh(range(len(words)), counts, align='center', color=bar_color)
-                ax.set_yticks(range(len(words)))
-                ax.set_yticklabels(words)
-                ax.invert_yaxis()
-                ax.set_xlabel('Frequency', fontweight='bold')
-                title = "Most Common Words"
-                if stats.get('stopwords_removed', False):
-                    title += " (Stopwords Removed)"
-                ax.set_title(title, fontweight='bold')
-                max_count = max(counts) if counts else 0
-                ax.set_xlim(0, max_count * 1.05)
-                ax.xaxis.set_major_locator(ticker.MaxNLocator(integer=True))
-                ax.xaxis.grid(True, linestyle='--', alpha=0.3)
-                ax.spines['top'].set_visible(False)
-                ax.spines['right'].set_visible(False)
-                figure.tight_layout()
+                canvas.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Fixed)
+                canvas.setFixedHeight(350)
+                
+                def update_plot():
+                    figure.clear()
+                    figure.subplots_adjust(left=0.15, right=0.95, bottom=0.15, top=0.95)
+                    ax = figure.add_subplot(111)
+                    
+                    words = [word for word, count in top_words]
+                    counts = [count for word, count in top_words]
+                    
+                    # Create horizontal bars with improved style
+                    bar_color = '#4285F4'
+                    bars = ax.barh(range(len(words)), counts, align='center', 
+                                color=bar_color, alpha=0.7)
+                    
+                    # Customize axes with smaller fonts
+                    ax.set_yticks(range(len(words)))
+                    ax.set_yticklabels(words, fontsize=8)
+                    ax.tick_params(axis='x', labelsize=8, pad=5)
+                    
+                    ax.invert_yaxis()  # Invert to show highest frequency at top
+                    
+                    # Set labels with smaller fonts
+                    ax.set_xlabel('Frequency', fontsize=9, labelpad=10)
+                    
+                    # Set axis limits and grid
+                    max_count = max(counts) if counts else 0
+                    ax.set_xlim(0, max_count * 1.05)
+                    ax.xaxis.set_major_locator(ticker.MaxNLocator(integer=True))
+                    ax.xaxis.grid(True, linestyle='--', alpha=0.3)
+                    
+                    # Remove unnecessary spines
+                    ax.spines['top'].set_visible(False)
+                    ax.spines['right'].set_visible(False)
+                    
+                    canvas.draw()
+                
+                # Add canvas to container
+                viz_layout.addWidget(canvas)
+                layout.addWidget(viz_container)
+                
+                # Connect resize event
+                canvas.mpl_connect('resize_event', lambda evt: update_plot())
+                update_plot()
+                
                 if hasattr(self._parent, 'cleanup_figure'):
                     self._parent.cleanup_figure(figure)
-                chart_frame = QFrame()
-                chart_layout = QVBoxLayout()
-                chart_layout.addWidget(canvas)
-                chart_frame.setLayout(chart_layout)
-                layout.addWidget(chart_frame)
+                
+                # Create content widget that will contain both table and stopwords
+                content_widget = QWidget()
+                content_widget.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Expanding)
+                content_layout = QVBoxLayout(content_widget)
+                
+                # Word frequency table in an expandable container
+                table_container = QWidget()
+                table_container.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Expanding)
+                table_layout = QVBoxLayout(table_container)
+                
+                table_group = QGroupBox("Word Frequency Details")
+                table_group.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Expanding)
+                group_layout = QVBoxLayout()
+                
+                table = QTableWidget()
+                table.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Expanding)
+                table.setColumnCount(2)
+                table.setHorizontalHeaderLabels(["Word", "Frequency"])
+                table.horizontalHeader().setSectionResizeMode(0, QHeaderView.Stretch)
+                table.setRowCount(len(most_common))
+                
+                for i, (word, count) in enumerate(most_common):
+                    table.setItem(i, 0, QTableWidgetItem(word))
+                    table.setItem(i, 1, QTableWidgetItem(str(count)))
+                
+                group_layout.addWidget(table)
+                table_group.setLayout(group_layout)
+                table_layout.addWidget(table_group)
+                content_layout.addWidget(table_container, stretch=1)
+                
+                # Add stopwords section with fixed size if available
+                if stats.get('stopwords_removed', False) and 'stopwords_used' in stats:
+                    stopwords_container = QWidget()
+                    stopwords_container.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Fixed)
+                    stopwords_container.setFixedHeight(120)  # Fixed height for stopwords section
+                    stopwords_layout = QVBoxLayout(stopwords_container)
+                    
+                    stopwords_group = QGroupBox("Stopwords Used")
+                    stopwords_group.setCheckable(True)
+                    stopwords_group.setChecked(False)
+                    group_layout = QVBoxLayout()
+                    
+                    stopwords_text = QTextEdit()
+                    stopwords_text.setReadOnly(True)
+                    stopwords_text.setText(", ".join(sorted(stats['stopwords_used'])))
+                    stopwords_text.setFixedHeight(60)
+                    
+                    group_layout.addWidget(stopwords_text)
+                    stopwords_group.setLayout(group_layout)
+                    stopwords_layout.addWidget(stopwords_group)
+                    
+                    content_layout.addWidget(stopwords_container)
+                
+                # Add the content widget to main layout with stretch
+                layout.addWidget(content_widget, stretch=1)
+                
             except Exception as e:
                 logger.error(f"Error creating word frequency chart: {str(e)}")
                 layout.addWidget(QLabel("Failed to create word frequency chart"))
-            layout.addWidget(QLabel("Word Frequency Table:"))
-            table = QTableWidget()
-            table.setColumnCount(2)
-            table.setHorizontalHeaderLabels(["Word", "Frequency"])
-            table.horizontalHeader().setSectionResizeMode(0, QHeaderView.Stretch)
-            table.setRowCount(len(most_common))
-            for i, (word, count) in enumerate(most_common):
-                table.setItem(i, 0, QTableWidgetItem(word))
-                table.setItem(i, 1, QTableWidgetItem(str(count)))
-            if stats.get('stopwords_removed', False) and 'stopwords_used' in stats:
-                stopwords_group = QGroupBox("Stopwords Used (click to expand)")
-                stopwords_group.setCheckable(True)
-                stopwords_group.setChecked(False)
-                stopwords_layout = QVBoxLayout()
-                stopwords_text = QTextEdit()
-                stopwords_text.setReadOnly(True)
-                stopwords_list = stats['stopwords_used']
-                stopwords_text.setText(", ".join(sorted(stopwords_list)))
-                stopwords_layout.addWidget(stopwords_text)
-                stopwords_group.setLayout(stopwords_layout)
-                layout.addWidget(stopwords_group)
-            layout.addWidget(table)
         else:
             layout.addWidget(QLabel("No word frequency data available."))
+        
         tab.setLayout(layout)
         return tab
     def _create_readability_tab(self, stats):
@@ -1850,6 +1936,495 @@ class TextViewerService(QObject):
     def cleanup(self):
         """Cleanup resources"""
         self.close_dialog()
+class TopicAnalysisResultDialog(QDialog):
+    def __init__(self, method: str, results: dict | list, parent=None, evolution_data=None):
+        super().__init__(parent)
+        self.method = method.upper()
+        self.results = results
+        self.evolution_data = evolution_data
+        self.setup_ui()
+    def setup_ui(self):
+        self.setWindowTitle(f"Topic Analysis Results - {self.method}")
+        self.setMinimumSize(700, 850)
+        layout = QVBoxLayout()
+        info_group = QGroupBox("Analysis Information")
+        info_layout = QVBoxLayout()
+        method_info = {
+            'LDA': """
+                <b>Latent Dirichlet Allocation (LDA)</b> is a probabilistic method that identifies topics based on word distribution patterns, suitable for analyzing long documents, articles, and discovering hidden themes. Score interpretation: Represents the probability distribution of words in topics.
+            """,
+            'NMF': """
+                <b>Non-negative Matrix Factorization (NMF)</b> is a linear algebra method that decomposes text into non-negative components, ideal for short to medium-length documents, specific topics, and sparse or rare data patterns. Score interpretation: Represents the weight/importance of words in topics.
+            """
+        }
+        info_text = QLabel(method_info.get(self.method, ""))
+        info_text.setWordWrap(True)
+        info_layout.addWidget(info_text)
+        info_group.setLayout(info_layout)
+        layout.addWidget(info_group)
+        tab_widget = QTabWidget()
+        overview_tab = self._create_overview_tab()
+        tab_widget.addTab(overview_tab, "Topic Overview")
+        detail_tab = self._create_detail_tab()
+        tab_widget.addTab(detail_tab, "Detailed View")
+        if self.evolution_data:
+            evolution_tab = self._create_evolution_tab()
+            tab_widget.addTab(evolution_tab, "Topic Evolution")
+        layout.addWidget(tab_widget)
+        button_layout = QHBoxLayout()
+        export_btn = QPushButton("Export Results")
+        export_btn.clicked.connect(self.export_results)
+        button_layout.addWidget(export_btn)
+        close_btn = QPushButton("Close")
+        close_btn.clicked.connect(self.close)
+        button_layout.addWidget(close_btn)
+        layout.addLayout(button_layout)
+        self.setLayout(layout)
+    def _create_overview_tab(self):
+        """Create the topic overview tab"""
+        tab = QWidget()
+        layout = QVBoxLayout()
+        overview_table = QTableWidget()
+        overview_table.setColumnCount(3)
+        overview_table.setHorizontalHeaderLabels(["Topic", "Top Terms", "Weight"])
+        overview_table.horizontalHeader().setSectionResizeMode(1, QHeaderView.ResizeMode.Stretch)
+        topics = self.results
+        overview_table.setRowCount(len(topics))
+        for i, topic in enumerate(topics):
+            topic_name = QTableWidgetItem(topic['topic'])
+            overview_table.setItem(i, 0, topic_name)
+            terms = ", ".join(topic['terms'][:5])
+            terms_item = QTableWidgetItem(terms)
+            overview_table.setItem(i, 1, terms_item)
+            weight = QTableWidgetItem(f"{topic['weight']:.2f}")
+            overview_table.setItem(i, 2, weight)
+        layout.addWidget(overview_table)
+        tab.setLayout(layout)
+        return tab
+    def _create_detail_tab(self):
+        """Create the detailed view tab"""
+        tab = QWidget()
+        layout = QVBoxLayout()
+        detail_tree = QTreeWidget()
+        detail_tree.setHeaderLabels(["Topic / Term", "Weight", "Related Terms"])
+        detail_tree.setColumnWidth(0, 200)
+        for topic in self.results:
+            topic_item = QTreeWidgetItem([topic['topic'], f"{topic['weight']:.2f}", ""])
+            topic_item.setExpanded(True)
+            for term in topic['terms']:
+                term_item = QTreeWidgetItem([term, "", ""])
+                related_terms = self.find_related_terms(term, self.results)
+                term_item.setText(2, ", ".join(related_terms))
+                topic_item.addChild(term_item)
+            detail_tree.addTopLevelItem(topic_item)
+        layout.addWidget(detail_tree)
+        tab.setLayout(layout)
+        return tab
+    def _create_evolution_tab(self):
+        """Create the topic evolution visualization tab"""
+        tab = QWidget()
+        layout = QVBoxLayout()
+        try:
+            if not self.evolution_data:
+                raise ValueError("No evolution data available")
+            from matplotlib.figure import Figure
+            from matplotlib.backends.backend_qt5agg import FigureCanvasQTAgg
+            # import numpy as np
+            
+            # Set minimum size untuk dialog
+            # self.setMinimumSize(700, 800)
+            self.setSizePolicy(QSizePolicy.Minimum, QSizePolicy.Minimum)
+            
+            # Data preparation
+            segments = self.evolution_data.get('segments', [])
+            topics = self.evolution_data.get('topics', [])
+            topic_strength = self.evolution_data.get('topic_strength', [])
+            
+            if not segments or not topics or not topic_strength:
+                raise ValueError("Incomplete evolution data")
+                
+            topic_strength_array = np.array(topic_strength).T
+            
+            # Visualization container (fixed size)
+            viz_container = QWidget()
+            viz_container.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Fixed)
+            viz_container.setFixedHeight(320)
+            viz_layout = QVBoxLayout(viz_container)
+            viz_layout.setContentsMargins(0, 0, 0, 0)
+            
+            # Create figure
+            figure = Figure(dpi=100)
+            canvas = FigureCanvasQTAgg(figure)
+            canvas.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Fixed)
+            canvas.setFixedHeight(320)
+            
+            def update_plot():
+                figure.clear()
+                figure.subplots_adjust(left=0.12, right=0.85, bottom=0.15, top=0.95, wspace=0.2)
+                ax = figure.add_subplot(111)
+                im = ax.imshow(topic_strength_array, aspect='auto', cmap='YlOrRd')
+                
+                ax.set_xticks(np.arange(len(segments)))
+                ax.set_yticks(np.arange(len(topics)))
+                ax.set_xticklabels(segments, rotation=0, ha='center', fontsize=8)
+                ax.set_yticklabels(topics, fontsize=8)
+                
+                ax.set_xlabel('Text Segments', fontsize=9, labelpad=5)
+                ax.set_ylabel('Topics', fontsize=9, labelpad=5)
+                
+                cbar_ax = figure.add_axes([0.87, 0.15, 0.03, 0.8])
+                cbar = figure.colorbar(im, cax=cbar_ax)
+                cbar.set_label('Topic Strength', fontsize=9, labelpad=5)
+                cbar.ax.tick_params(labelsize=8)
+                
+                for i in range(len(segments)):
+                    for j in range(len(topics)):
+                        value = topic_strength_array[j, i]
+                        text_color = 'white' if value > 0.5 else 'black'
+                        ax.text(i, j, f"{value:.2f}", 
+                            ha="center", va="center",
+                            color=text_color, fontsize=7)
+                
+                ax.tick_params(axis='both', which='major', labelsize=8, pad=2)
+                canvas.draw()
+            
+            viz_layout.addWidget(canvas)
+            layout.addWidget(viz_container)
+            
+            canvas.mpl_connect('resize_event', lambda evt: update_plot())
+            update_plot()
+            
+            # Explanation (fixed size)
+            explanation = QLabel(
+                "<p><b>Topic Evolution</b> shows how topics change throughout the text. "
+                "Darker colors indicate stronger topic presence in that segment.</p>"
+            )
+            explanation.setWordWrap(True)
+            explanation.setFixedHeight(40)
+            layout.addWidget(explanation)
+            
+            # Create expandable content widget for bottom section
+            content_widget = QWidget()
+            content_widget.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Expanding)
+            content_layout = QHBoxLayout(content_widget)
+            
+            # Left column: Topic Keywords
+            keywords_group = QGroupBox("Topic Keywords")
+            keywords_group.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Expanding)
+            keywords_layout = QVBoxLayout()
+            
+            topic_keywords = self.evolution_data.get('topic_keywords', {})
+            for topic, keywords in topic_keywords.items():
+                keyword_text = ", ".join(keywords[:7])
+                label = QLabel(f"<b>{topic}:</b> {keyword_text}")
+                label.setWordWrap(True)
+                keywords_layout.addWidget(label)
+            
+            keywords_layout.addStretch()
+            keywords_group.setLayout(keywords_layout)
+            content_layout.addWidget(keywords_group)
+            
+            # Right column: Segment Details
+            details_group = QGroupBox("Segment Details")
+            details_group.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Expanding)
+            details_layout = QVBoxLayout()
+            
+            segment_table = QTableWidget()
+            segment_table.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Expanding)
+            segment_table.setColumnCount(3)
+            segment_table.setHorizontalHeaderLabels(["Segment", "Dominant Topic", "Strength"])
+            segment_table.horizontalHeader().setSectionResizeMode(0, QHeaderView.ResizeMode.Stretch)
+            
+            segment_details = self.evolution_data.get('segment_details', [])
+            if segment_details:
+                segment_table.setRowCount(len(segment_details))
+                for i, segment in enumerate(segment_details):
+                    segment_label = f"Segment {i+1}"
+                    if 'segment_text' in segment:
+                        segment_label += f": {segment['segment_text']}"
+                    segment_table.setItem(i, 0, QTableWidgetItem(segment_label))
+                    
+                    try:
+                        distribution = segment.get('topic_distribution', [])
+                        if distribution:
+                            dominant_idx = max(range(len(distribution)), 
+                                            key=lambda i: distribution[i])
+                            dominant_topic = f"Topic {dominant_idx + 1}"
+                            dominant_strength = distribution[dominant_idx]
+                            
+                            segment_table.setItem(i, 1, QTableWidgetItem(dominant_topic))
+                            segment_table.setItem(i, 2, QTableWidgetItem(f"{dominant_strength:.3f}"))
+                    except:
+                        segment_table.setItem(i, 1, QTableWidgetItem("N/A"))
+                        segment_table.setItem(i, 2, QTableWidgetItem("N/A"))
+            
+            details_layout.addWidget(segment_table)
+            details_group.setLayout(details_layout)
+            content_layout.addWidget(details_group)
+            
+            # Add the content widget to main layout with stretch
+            layout.addWidget(content_widget, stretch=1)
+            
+        except Exception as e:
+            error_msg = f"Failed to create topic evolution visualization: {str(e)}"
+            logger.error(error_msg)
+            error_label = QLabel(error_msg)
+            error_label.setStyleSheet("color: red")
+            error_label.setWordWrap(True)
+            layout.addWidget(error_label)
+        
+        tab.setLayout(layout)
+        return tab
+    def find_related_terms(self, target_term: str, topics: list) -> list:
+        """Find terms that appear in other topics"""
+        related = set()
+        try:
+            for topic in topics:
+                terms = topic.get('terms', [])
+                if target_term in terms:
+                    related.update(terms[:5])
+            related.discard(target_term)
+            return list(related)[:5]
+        except Exception as e:
+            logger.error(f"Error finding related terms: {e}")
+            return []
+    def export_results(self):
+        """Export results to CSV including evolution data if available"""
+        import csv
+        file_path, _ = QFileDialog.getSaveFileName(
+            self,
+            "Export Results",
+            "",
+            "CSV files (*.csv)"
+        )
+        if file_path:
+            try:
+                with open(file_path, 'w', newline='', encoding='utf-8') as f:
+                    writer = csv.writer(f)
+                    writer.writerow(['Topic Analysis Results'])
+                    writer.writerow(['Method', self.method])
+                    writer.writerow([])
+                    writer.writerow(['Topic', 'Weight', 'Terms', 'Related Terms'])
+                    for topic in self.results:
+                        for term in topic['terms']:
+                            related = self.find_related_terms(term, self.results)
+                            writer.writerow([
+                                topic['topic'],
+                                f"{topic['weight']:.2f}",
+                                term,
+                                ', '.join(related)
+                            ])
+                    if self.evolution_data:
+                        writer.writerow([])
+                        writer.writerow(['Topic Evolution Analysis'])
+                        writer.writerow([])
+                        segments = self.evolution_data.get('segments', [])
+                        topics = self.evolution_data.get('topics', [])
+                        header = ['Topic'] + segments
+                        writer.writerow(header)
+                        topic_strength = self.evolution_data.get('topic_strength', [])
+                        if topics and topic_strength:
+                            try:
+                                import numpy as np
+                                strength_array = np.array(topic_strength).T
+                                for i, topic in enumerate(topics):
+                                    if i < len(strength_array):
+                                        row = [topic] + [f"{x:.3f}" for x in strength_array[i]]
+                                        writer.writerow(row)
+                            except:
+                                writer.writerow(['Topic evolution data could not be formatted'])
+                        writer.writerow([])
+                        writer.writerow(['Topic Keywords'])
+                        topic_keywords = self.evolution_data.get('topic_keywords', {})
+                        for topic, keywords in topic_keywords.items():
+                            writer.writerow([topic, ', '.join(keywords)])
+                QMessageBox.information(self, "Success", "Results exported successfully!")
+            except Exception as e:
+                logger.error(f"Export error: {str(e)}")
+                QMessageBox.critical(self, "Error", f"Failed to export results: {str(e)}")
+class KeywordExtractionResultDialog(QDialog):
+    """Dialog untuk menampilkan hasil keyword extraction"""
+    def __init__(self, method: str, results: list, parent=None):
+        super().__init__(parent)
+        self.method = method.upper()
+        self.results = results
+        self.setup_ui()
+        
+    def setup_ui(self):
+        self.setWindowTitle(f"Keyword Extraction Results - {self.method}")
+        self.setMinimumSize(800, 700)
+        
+        # Main layout
+        layout = QVBoxLayout()
+        layout.setSpacing(10)
+        
+        try:
+            # Create visualization container with strict size control
+            viz_container = QWidget()
+            viz_container.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Fixed)
+            viz_container.setFixedHeight(350)
+            viz_layout = QVBoxLayout(viz_container)
+            viz_layout.setContentsMargins(0, 0, 0, 0)
+            
+            # Import visualization libraries
+            from matplotlib.figure import Figure
+            from matplotlib.backends.backend_qt5agg import FigureCanvasQTAgg
+            import numpy as np
+            
+            # Create figure with fixed DPI
+            figure = Figure(dpi=100)
+            canvas = FigureCanvasQTAgg(figure)
+            canvas.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Fixed)
+            canvas.setFixedHeight(350)
+            
+            def update_plot():
+                figure.clear()
+                
+                # Get top 15 keywords
+                top_keywords = self.results[:15]
+                keywords = [kw['keyword'] for kw in top_keywords]
+                scores = [kw['score'] for kw in top_keywords]
+                
+                # Create horizontal bar chart
+                ax = figure.add_subplot(111)
+                
+                # Adjust subplot parameters for better layout
+                figure.subplots_adjust(left=0.3, right=0.95, bottom=0.15, top=0.95)
+                
+                # Create bars
+                y_pos = np.arange(len(keywords))
+                bars = ax.barh(y_pos, scores, align='center', 
+                             color='#4285F4', alpha=0.7)
+                
+                # Customize axes
+                ax.set_yticks(y_pos)
+                ax.set_yticklabels(keywords, fontsize=9)
+                ax.invert_yaxis()  # Show highest score at top
+                
+                # Customize appearance
+                ax.set_xlabel('Relevance Score', fontsize=9, labelpad=10)
+                ax.tick_params(axis='x', labelsize=8, pad=5)
+                
+                # Remove unnecessary spines
+                ax.spines['top'].set_visible(False)
+                ax.spines['right'].set_visible(False)
+                
+                # Add grid
+                ax.xaxis.grid(True, linestyle='--', alpha=0.3)
+                
+                canvas.draw()
+            
+            # Add canvas to container
+            viz_layout.addWidget(canvas)
+            layout.addWidget(viz_container)
+            
+            # Connect resize event
+            canvas.mpl_connect('resize_event', lambda evt: update_plot())
+            update_plot()
+
+            # Add explanation
+            method_info = {
+                'TFIDF': "TF-IDF scores indicate how important a word is to a document in a collection. "
+                        "Higher scores indicate more important keywords.",
+                'YAKE': "YAKE scores are inversely related to importance - lower scores indicate "
+                       "more important keywords.",
+                'RAKE': "RAKE scores indicate keyword relevance based on word frequency and co-occurrence. "
+                       "Higher scores indicate more important keywords."
+            }
+            
+            explanation = QLabel(
+                f"<p><b>Keyword Extraction Results</b></p>"
+                f"<p>{method_info.get(self.method, '')}</p>"
+            )
+            explanation.setWordWrap(True)
+            explanation.setFixedHeight(50)
+            layout.addWidget(explanation)
+
+            # Create main content widget that will expand
+            content_widget = QWidget()
+            content_widget.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Expanding)
+            content_layout = QVBoxLayout(content_widget)
+            content_layout.setContentsMargins(0, 0, 0, 0)
+            
+            # Results table
+            table_group = QGroupBox("Detailed Results")
+            table_group.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Expanding)
+            table_layout = QVBoxLayout()
+            
+            table = QTableWidget()
+            table.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Expanding)
+            table.setColumnCount(3)
+            table.setHorizontalHeaderLabels(["Rank", "Keyword", "Score"])
+            table.horizontalHeader().setSectionResizeMode(1, QHeaderView.Stretch)
+            table.setRowCount(len(self.results))
+            
+            for i, result in enumerate(self.results):
+                table.setItem(i, 0, QTableWidgetItem(str(i + 1)))
+                table.setItem(i, 1, QTableWidgetItem(result['keyword']))
+                table.setItem(i, 2, QTableWidgetItem(f"{result['score']:.4f}"))
+            
+            table_layout.addWidget(table)
+            table_group.setLayout(table_layout)
+            content_layout.addWidget(table_group)
+            
+            # Add the content widget to main layout with stretch
+            layout.addWidget(content_widget, stretch=1)
+
+            # Add buttons
+            button_layout = QHBoxLayout()
+            
+            export_btn = QPushButton("Export Results")
+            export_btn.clicked.connect(self.export_results)
+            button_layout.addWidget(export_btn)
+            
+            close_btn = QPushButton("Close")
+            close_btn.clicked.connect(self.accept)
+            button_layout.addWidget(close_btn)
+            
+            layout.addLayout(button_layout)
+
+        except Exception as e:
+            error_msg = f"Failed to create visualization: {str(e)}"
+            logger.error(error_msg)
+            error_label = QLabel(error_msg)
+            error_label.setStyleSheet("color: red")
+            error_label.setWordWrap(True)
+            layout.addWidget(error_label)
+
+        self.setLayout(layout)
+
+    def export_results(self):
+        """Export results to CSV"""
+        file_path, _ = QFileDialog.getSaveFileName(
+            self,
+            "Export Results",
+            "",
+            "CSV files (*.csv)"
+        )
+        
+        if file_path:
+            try:
+                import csv
+                with open(file_path, 'w', newline='', encoding='utf-8') as f:
+                    writer = csv.writer(f)
+                    writer.writerow(['Rank', 'Keyword', 'Score'])
+                    for i, result in enumerate(self.results, 1):
+                        writer.writerow([
+                            i,
+                            result['keyword'],
+                            f"{result['score']:.4f}"
+                        ])
+                QMessageBox.information(
+                    self, 
+                    "Success", 
+                    f"Successfully exported {len(self.results)} keywords!"
+                )
+            except Exception as e:
+                QMessageBox.critical(
+                    self, 
+                    "Error", 
+                    f"Failed to export results: {str(e)}"
+                )
 class SentimentAnalysisResultDialog(QDialog):
     def __init__(self, sentiment_mode: str, result: dict, parent=None):
         super().__init__(parent)
@@ -1859,6 +2434,26 @@ class SentimentAnalysisResultDialog(QDialog):
     def setup_ui(self):
         self.setWindowTitle(f"Sentiment Analysis Results - {self.sentiment_mode}")
         self.setMinimumSize(600, 500)
+        layout = QVBoxLayout()
+        tab_widget = QTabWidget()
+        overview_tab = self._create_overview_tab()
+        tab_widget.addTab(overview_tab, "Overall Results")
+        if 'sentiment_timeline' in self.result:
+            timeline_tab = self._create_timeline_tab()
+            tab_widget.addTab(timeline_tab, "Sentiment Timeline")
+        layout.addWidget(tab_widget)
+        button_layout = QHBoxLayout()
+        export_btn = QPushButton("Export Results")
+        export_btn.clicked.connect(self.export_results)
+        button_layout.addWidget(export_btn)
+        close_btn = QPushButton("Close")
+        close_btn.clicked.connect(self.accept)
+        button_layout.addWidget(close_btn)
+        layout.addLayout(button_layout)
+        self.setLayout(layout)
+    def _create_overview_tab(self):
+        """Create the overview tab with existing sentiment analysis results"""
+        tab = QWidget()
         layout = QVBoxLayout()
         results_group = QGroupBox("Analysis Results")
         results_layout = QVBoxLayout()
@@ -1932,43 +2527,158 @@ class SentimentAnalysisResultDialog(QDialog):
         info_layout.addWidget(info_label)
         info_group.setLayout(info_layout)
         layout.addWidget(info_group)
-        button_layout = QHBoxLayout()
-        export_btn = QPushButton("Export Results")
-        export_btn.clicked.connect(self.export_results)
-        button_layout.addWidget(export_btn)
-        close_btn = QPushButton("Close")
-        close_btn.clicked.connect(self.accept)
-        button_layout.addWidget(close_btn)
-        layout.addLayout(button_layout)
-        self.setLayout(layout)
-    def get_interpretation(self) -> str:
-        """Get human-readable interpretation of results"""
-        score = self.result["compound_score"]
-        if self.sentiment_mode in ["VADER", "VADER (Custom Lexicon)"]:
-            if score >= 0.05:
-                return "The text expresses positive sentiment. This indicates favorable or positive content."
-            elif score <= -0.05:
-                return "The text expresses negative sentiment. This indicates unfavorable or negative content."
-            else:
-                return "The text is neutral. This indicates balanced or unclear sentiment."
-        elif self.sentiment_mode in ["TextBlob", "TextBlob (Custom Lexicon)"]:
-            subj = self.result.get("subjectivity", 0)
-            sentiment = "positive" if score > 0 else "negative" if score < 0 else "neutral"
-            subj_text = ("highly subjective" if subj >= 0.7 else "highly objective" if subj <= 0.3 else "its subjectivity is unclear — it may depend on interpretation or context")
-            return f"The text is {sentiment} and {subj_text}."
-        else:
-            confidence = score
-            return f"The model predicts {self.result['sentiment_label'].lower()} sentiment with {confidence:.2%} confidence."
-    def get_method_info(self) -> str:
-        """Get method-specific information"""
-        if self.sentiment_mode in ["VADER", "VADER (Custom Lexicon)"]:
-            return "VADER is optimized for social media and short texts. It considers word order, punctuation, slang, and emoticons."
-        elif self.sentiment_mode in ["TextBlob", "TextBlob (Custom Lexicon)"]:
-            return "TextBlob provides both polarity (positive/negative) and subjectivity (objective/subjective) analysis using lexicon-based approach."
-        else:
-            return "Flair uses state-of-the-art deep learning models for sentiment analysis, providing high accuracy for complex texts."
+        tab.setLayout(layout)
+        return tab
+    def _create_timeline_tab(self):
+        """Create the sentiment timeline visualization tab"""
+        tab = QWidget()
+        layout = QVBoxLayout()
+        
+        try:
+            timeline_data = self.result['sentiment_timeline']
+            
+            # Import visualization libraries
+            from matplotlib.figure import Figure
+            from matplotlib.backends.backend_qt5agg import FigureCanvasQTAgg
+            from matplotlib.colors import LinearSegmentedColormap
+            
+            # Visualization container (fixed size)
+            viz_container = QWidget()
+            viz_container.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Fixed)
+            viz_container.setFixedHeight(350)
+            viz_layout = QVBoxLayout(viz_container)
+            viz_layout.setContentsMargins(0, 0, 0, 0)
+            
+            # Create figure with fixed size
+            figure = Figure(dpi=100)
+            canvas = FigureCanvasQTAgg(figure)
+            canvas.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Fixed)
+            canvas.setFixedHeight(350)
+            
+            def update_plot():
+                figure.clear()
+                figure.subplots_adjust(left=0.1, right=0.85, bottom=0.15, top=0.95)
+                ax = figure.add_subplot(111)
+                
+                sentences = range(len(timeline_data))
+                sentiments = [s['score'] for s in timeline_data]
+                
+                scatter = ax.scatter(sentences, 
+                                sentiments,
+                                c=sentiments,
+                                cmap='RdYlGn',
+                                vmin=-1,
+                                vmax=1,
+                                s=50)
+                
+                ax.plot(sentences, sentiments, 'k--', alpha=0.5)
+                ax.set_xlabel('Sentence Number', fontsize=9)
+                ax.set_ylabel('Sentiment Score', fontsize=9)
+                ax.tick_params(axis='both', which='major', labelsize=8)
+                ax.grid(True, linestyle='--', alpha=0.3)
+                
+                cbar_ax = figure.add_axes([0.87, 0.15, 0.03, 0.8])
+                cbar = figure.colorbar(scatter, cax=cbar_ax)
+                cbar.set_label('Sentiment Intensity', fontsize=9)
+                cbar.ax.tick_params(labelsize=8)
+                
+                canvas.draw()
+            
+            viz_layout.addWidget(canvas)
+            layout.addWidget(viz_container)
+            
+            canvas.mpl_connect('resize_event', lambda evt: update_plot())
+            update_plot()
+            
+            # Explanation (fixed size)
+            explanation = QLabel(
+                "<p><b>Sentiment Timeline</b> shows how sentiment changes throughout the text. "
+                "Green indicates positive sentiment, red indicates negative sentiment.</p>"
+            )
+            explanation.setWordWrap(True)
+            explanation.setFixedHeight(40)
+            layout.addWidget(explanation)
+            
+            # Create expandable content widget for details
+            content_widget = QWidget()
+            content_widget.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Expanding)
+            content_layout = QVBoxLayout(content_widget)
+            
+            # Sentence-level Analysis group
+            details_group = QGroupBox("Sentence-level Analysis")
+            details_group.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Expanding)
+            details_layout = QVBoxLayout()
+            
+            # Create table
+            table = QTableWidget()
+            table.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Expanding)
+            table.setColumnCount(4)
+            
+            # Set up headers
+            headers = ["Sentence", "Sentiment", "Score"]
+            if self.sentiment_mode in ["TextBlob", "TextBlob (Custom Lexicon)"]:
+                headers.append("Subjectivity")
+            elif self.sentiment_mode in ["VADER", "VADER (Custom Lexicon)"]:
+                headers.append("Compound")
+            elif self.sentiment_mode in ["Flair", "Flair (Custom Model)"]:
+                headers.append("Confidence")
+            
+            table.setHorizontalHeaderLabels(headers)
+            table.setRowCount(len(timeline_data))
+            table.horizontalHeader().setSectionResizeMode(0, QHeaderView.Stretch)
+            
+            # Populate table
+            for i, data in enumerate(timeline_data):
+                # Truncate long sentences
+                sentence_text = data['sentence']
+                if len(sentence_text) > 100:
+                    sentence_text = sentence_text[:97] + "..."
+                
+                sentence_item = QTableWidgetItem(sentence_text)
+                label_item = QTableWidgetItem(data['label'])
+                score_item = QTableWidgetItem(f"{data['score']:.3f}")
+                
+                # Set background color based on sentiment
+                label_item.setBackground(QColor(
+                    '#e8f5e9' if data['label'] == 'POSITIVE' else
+                    '#ffebee' if data['label'] == 'NEGATIVE' else
+                    '#f5f5f5'
+                ))
+                
+                table.setItem(i, 0, sentence_item)
+                table.setItem(i, 1, label_item)
+                table.setItem(i, 2, score_item)
+                
+                # Add mode-specific metric
+                if self.sentiment_mode in ["TextBlob", "TextBlob (Custom Lexicon)"]:
+                    subj_item = QTableWidgetItem(f"{data.get('subjectivity', 0):.3f}")
+                    table.setItem(i, 3, subj_item)
+                elif self.sentiment_mode in ["VADER", "VADER (Custom Lexicon)"]:
+                    compound_item = QTableWidgetItem(f"{data.get('score', 0):.3f}")
+                    table.setItem(i, 3, compound_item)
+                elif self.sentiment_mode in ["Flair", "Flair (Custom Model)"]:
+                    confidence_item = QTableWidgetItem(f"{data.get('confidence', 0):.3f}")
+                    table.setItem(i, 3, confidence_item)
+            
+            details_layout.addWidget(table)
+            details_group.setLayout(details_layout)
+            content_layout.addWidget(details_group)
+            
+            # Add the content widget to main layout with stretch
+            layout.addWidget(content_widget, stretch=1)
+            
+        except Exception as e:
+            error_msg = f"Failed to create timeline visualization: {str(e)}"
+            logger.error(error_msg)
+            error_label = QLabel(error_msg)
+            error_label.setStyleSheet("color: red")
+            error_label.setWordWrap(True)
+            layout.addWidget(error_label)
+        
+        tab.setLayout(layout)
+        return tab
     def export_results(self):
-        """Export results to CSV"""
+        """Export results to CSV including timeline data"""
         import csv
         file_path, _ = QFileDialog.getSaveFileName(
             self,
@@ -1980,9 +2690,9 @@ class SentimentAnalysisResultDialog(QDialog):
             try:
                 with open(file_path, 'w', newline='', encoding='utf-8') as f:
                     writer = csv.writer(f)
-                    writer.writerow(['Component', 'Value'])
+                    writer.writerow(['Overall Analysis Results'])
                     writer.writerow(['Analysis Method', self.sentiment_mode])
-                    writer.writerow(['Sentiment', self.result["sentiment_label"]])
+                    writer.writerow(['Overall Sentiment', self.result["sentiment_label"]])
                     if self.sentiment_mode in ["VADER", "VADER (Custom Lexicon)"]:
                         score_type = "Compound Score"
                     elif self.sentiment_mode in ["TextBlob", "TextBlob (Custom Lexicon)"]:
@@ -1999,252 +2709,160 @@ class SentimentAnalysisResultDialog(QDialog):
                         writer.writerow(['Negative Score', f"{self.result['negative_score']:.4f}"])
                     if self.sentiment_mode in ["TextBlob", "TextBlob (Custom Lexicon)"]:
                         writer.writerow(['Subjectivity', f"{self.result.get('subjectivity', 'N/A')}"])
-                    QMessageBox.information(self, "Success", "Results exported successfully!")
-            except Exception as e:
-                QMessageBox.critical(self, "Error", f"Failed to export results: {str(e)}")
-class TopicAnalysisResultDialog(QDialog):
-    def __init__(self, method: str, results: dict | list, parent=None):
-        super().__init__(parent)
-        self.method = method.upper()
-        self.results = results
-        self.setup_ui()
-    def setup_ui(self):
-        self.setWindowTitle(f"Topic Analysis Results - {self.method}")
-        self.setMinimumSize(700, 500)
-        layout = QVBoxLayout()
-        info_group = QGroupBox("Analysis Information")
-        info_layout = QVBoxLayout()
-        method_info = {
-            'LDA': """
-                <b>Latent Dirichlet Allocation (LDA)</b>
-                <p>LDA is a probabilistic method that identifies topics based on word distribution patterns.
-                This method is suitable for:</p>
-                <ul>
-                    <li>Long documents with multiple topics</li>
-                    <li>Analysis of articles and formal documents</li>
-                    <li>Discovering hidden themes in text</li>
-                </ul>
-                <p>Score interpretation: Represents probability distribution of words in topics</p>
-            """,
-            'NMF': """
-                <b>Non-negative Matrix Factorization (NMF)</b>
-                <p>NMF is a linear algebra method that decomposes text into non-negative components.
-                This method is ideal for:</p>
-                <ul>
-                    <li>Short to medium-length documents</li>
-                    <li>Specific and focused topics</li>
-                    <li>Sparse or rare data patterns</li>
-                </ul>
-                <p>Score interpretation: Represents the weight/importance of words in topics</p>
-            """
-        }
-        info_text = QLabel(method_info.get(self.method, ""))
-        info_text.setWordWrap(True)
-        info_layout.addWidget(info_text)
-        info_group.setLayout(info_layout)
-        layout.addWidget(info_group)
-        tab_widget = QTabWidget()
-        overview_tab = QWidget()
-        overview_layout = QVBoxLayout()
-        overview_table = QTableWidget()
-        overview_table.setColumnCount(3)
-        overview_table.setHorizontalHeaderLabels(["Topic", "Top Terms", "Weight"])
-        overview_table.horizontalHeader().setSectionResizeMode(1, QHeaderView.ResizeMode.Stretch)
-        topics = self.results
-        overview_table.setRowCount(len(topics))
-        for i, topic in enumerate(topics):
-            topic_name = QTableWidgetItem(topic['topic'])
-            overview_table.setItem(i, 0, topic_name)
-            terms = ", ".join(topic['terms'][:5])
-            terms_item = QTableWidgetItem(terms)
-            overview_table.setItem(i, 1, terms_item)
-            weight = QTableWidgetItem(f"{topic['weight']:.2f}")
-            overview_table.setItem(i, 2, weight)
-        overview_layout.addWidget(overview_table)
-        overview_tab.setLayout(overview_layout)
-        tab_widget.addTab(overview_tab, "Topic Overview")
-        detail_tab = QWidget()
-        detail_layout = QVBoxLayout()
-        detail_tree = QTreeWidget()
-        detail_tree.setHeaderLabels(["Topic / Term", "Weight", "Related Terms"])
-        detail_tree.setColumnWidth(0, 200)
-        for topic in topics:
-            topic_item = QTreeWidgetItem([topic['topic'], f"{topic['weight']:.2f}", ""])
-            topic_item.setExpanded(True)
-            for term in topic['terms']:
-                term_item = QTreeWidgetItem([term, "", ""])
-                related_terms = self.find_related_terms(term, topics)
-                term_item.setText(2, ", ".join(related_terms))
-                topic_item.addChild(term_item)
-            detail_tree.addTopLevelItem(topic_item)
-        detail_layout.addWidget(detail_tree)
-        detail_tab.setLayout(detail_layout)
-        tab_widget.addTab(detail_tab, "Detailed View")
-        layout.addWidget(tab_widget)
-        button_layout = QHBoxLayout()
-        export_btn = QPushButton("Export Results")
-        export_btn.clicked.connect(self.export_results)
-        button_layout.addWidget(export_btn)
-        close_btn = QPushButton("Close")
-        close_btn.clicked.connect(self.close)
-        button_layout.addWidget(close_btn)
-        layout.addLayout(button_layout)        
-        self.setLayout(layout)
-    def find_related_terms(self, target_term: str, topics: list) -> list:
-        """Find terms that appear in other topics"""
-        related = set()
-        for topic in topics:
-            terms = topic['terms']
-            if target_term in terms:
-                related.update(terms[:5])
-        related.discard(target_term)
-        return list(related)[:5]
-    def export_results(self):
-        import csv
-        file_path, _ = QFileDialog.getSaveFileName(
-            self,
-            "Export Results",
-            "",
-            "CSV files (*.csv)"
-        )
-        if file_path:
-            try:
-                with open(file_path, 'w', newline='', encoding='utf-8') as f:
-                    writer = csv.writer(f)
-                    writer.writerow(['Topic', 'Weight', 'Terms', 'Related Terms'])
-                    for topic in self.results:
-                        for term in topic['terms']:
-                            related = self.find_related_terms(term, self.results)
-                            writer.writerow([
-                                topic['topic'],
-                                f"{topic['weight']:.2f}",
-                                term,
-                                ', '.join(related)
-                            ])
+                    if 'sentiment_timeline' in self.result:
+                        writer.writerow([])
+                        writer.writerow(['Sentiment Timeline Analysis'])
+                        headers = ['Sentence', 'Sentiment', 'Score']
+                        if self.sentiment_mode in ["TextBlob", "TextBlob (Custom Lexicon)"]:
+                            headers.append('Subjectivity')
+                        elif self.sentiment_mode in ["VADER", "VADER (Custom Lexicon)"]:
+                            headers.append('Compound')
+                        elif self.sentiment_mode in ["Flair", "Flair (Custom Model)"]:
+                            headers.append('Confidence')
+                        writer.writerow(headers)
+                        for data in self.result['sentiment_timeline']:
+                            row = [
+                                data['sentence'],
+                                data['label'],
+                                f"{data['score']:.3f}"
+                            ]
+                            if self.sentiment_mode in ["TextBlob", "TextBlob (Custom Lexicon)"]:
+                                row.append(f"{data.get('subjectivity', 0):.3f}")
+                            elif self.sentiment_mode in ["VADER", "VADER (Custom Lexicon)"]:
+                                row.append(f"{data.get('score', 0):.3f}")
+                            elif self.sentiment_mode in ["Flair", "Flair (Custom Model)"]:
+                                row.append(f"{data.get('confidence', 0):.3f}")
+                            writer.writerow(row)
                 QMessageBox.information(self, "Success", "Results exported successfully!")
             except Exception as e:
                 QMessageBox.critical(self, "Error", f"Failed to export results: {str(e)}")
-class KeywordExtractionResultDialog(QDialog):
-    def __init__(self, method: str, results: list, parent=None):
-        super().__init__(parent)
-        self.method = method.upper()
-        self.results = results
-        self.setup_ui()
-    def setup_ui(self):
-        self.setWindowTitle(f"Keyword Extraction Results - {self.method}")
-        self.setMinimumSize(800, 600)
-        layout = QVBoxLayout()
-        info_group = QGroupBox("Method Information")
-        info_layout = QVBoxLayout()
-        method_info = {
-            'TFIDF': """
-                <b>TF-IDF (Term Frequency-Inverse Document Frequency)</b>
-                <p>A statistical method that evaluates word importance by combining:</p>
-                <ul>
-                    <li><b>TF:</b> How frequently a word appears in the text</li>
-                    <li><b>IDF:</b> How unique the word is across all documents</li>
-                </ul>
-                <p>Score range: 0-1, higher scores indicate more significant terms</p>
-            """,
-            'YAKE': """
-                <b>YAKE (Yet Another Keyword Extractor)</b>
-                <p>An unsupervised approach that considers multiple features:</p>
-                <ul>
-                    <li>Term position and frequency</li>
-                    <li>Word relationships and co-occurrences</li>
-                    <li>Text statistical properties</li>
-                </ul>
-                <p>Score range: 0-1, lower scores indicate more significant terms</p>
-            """,
-            'RAKE': """
-                <b>RAKE (Rapid Automatic Keyword Extraction)</b>
-                <p>An efficiency-focused algorithm that:</p>
-                <ul>
-                    <li>Identifies key phrases, not just single words</li>
-                    <li>Uses word co-occurrence statistics</li>
-                    <li>Considers word frequency and phrase length</li>
-                </ul>
-                <p>Score range: 0+, higher scores indicate more significant terms</p>
-            """,
-            'TEXTRANK': """
-                <b>TextRank</b>
-                <p>A graph-based ranking algorithm that:</p>
-                <ul>
-                    <li>Analyzes word relationships in text</li>
-                    <li>Uses PageRank-like algorithm</li>
-                    <li>Considers word co-occurrence patterns</li>
-                </ul>
-                <p>Score range: 0-1, higher scores indicate more significant terms</p>
-            """
-        }
-        info_text = QLabel(method_info.get(self.method, "Unknown method"))
-        info_text.setWordWrap(True)
-        info_layout.addWidget(info_text)
-        info_group.setLayout(info_layout)
-        layout.addWidget(info_group)
-        self.table = QTableWidget()
-        self.table.setColumnCount(3)
-        self.table.setHorizontalHeaderLabels(["Rank", "Keyword", "Score"])
-        self.table.horizontalHeader().setSectionResizeMode(1, QHeaderView.ResizeMode.Stretch)
-        self.table.horizontalHeader().setSectionResizeMode(2, QHeaderView.ResizeMode.ResizeToContents)
-        self.table.setRowCount(len(self.results))
-        for i, result in enumerate(self.results):
-            rank_item = QTableWidgetItem(f"#{i+1}")
-            self.table.setItem(i, 0, rank_item)
-            keyword_item = QTableWidgetItem(result['keyword'])
-            self.table.setItem(i, 1, keyword_item)
-            score = result['score']
-            if self.method == 'YAKE':
-                score_text = f"{score:.4f} (lower is better)"
+    def get_interpretation(self) -> str:
+        """Get human-readable interpretation of results"""
+        score = self.result["compound_score"]
+        timeline_insight = ""
+        if 'sentiment_timeline' in self.result:
+            timeline = self.result['sentiment_timeline']
+            pos_count = sum(1 for item in timeline if item['label'] == 'POSITIVE')
+            neg_count = sum(1 for item in timeline if item['label'] == 'NEGATIVE')
+            neu_count = sum(1 for item in timeline if item['label'] == 'NEUTRAL')
+            total = len(timeline)
+            timeline_insight = f"\n\nSentiment Distribution in Text: "
+            timeline_insight += f"{pos_count/total:.1%} positive, "
+            timeline_insight += f"{neg_count/total:.1%} negative, "
+            timeline_insight += f"{neu_count/total:.1%} neutral sentences."
+        if self.sentiment_mode in ["VADER", "VADER (Custom Lexicon)"]:
+            if score >= 0.05:
+                base_interp = "The text expresses positive sentiment. This indicates favorable or positive content."
+            elif score <= -0.05:
+                base_interp = "The text expresses negative sentiment. This indicates unfavorable or negative content."
             else:
-                score_text = f"{score:.4f}"
-            score_item = QTableWidgetItem(score_text)
-            self.table.setItem(i, 2, score_item)
-        layout.addWidget(self.table)
-        button_layout = QHBoxLayout()
-        export_btn = QPushButton("Export Results")
-        export_btn.clicked.connect(self.export_results)
-        button_layout.addWidget(export_btn)
-        close_btn = QPushButton("Close")
-        close_btn.clicked.connect(self.close)
-        button_layout.addWidget(close_btn)
-        layout.addLayout(button_layout)        
-        self.setLayout(layout)
-    def export_results(self):
-        import csv
-        file_path, _ = QFileDialog.getSaveFileName(
-            self,
-            "Export Results",
-            "",
-            "CSV files (*.csv)"
-        )
-        if file_path:
-            try:
-                with open(file_path, 'w', newline='', encoding='utf-8') as f:
-                    writer = csv.writer(f)
-                    writer.writerow(['Rank', 'Keyword', 'Score'])
-                    for i, result in enumerate(self.results, 1):
-                        writer.writerow([
-                            i,
-                            result['keyword'],
-                            f"{result['score']:.4f}"
-                        ])
-                QMessageBox.information(self, "Success", 
-                    f"Successfully exported {len(self.results)} keywords!")
-            except Exception as e:
-                QMessageBox.critical(self, "Error", f"Failed to export results: {str(e)}")
+                base_interp = "The text is neutral. This indicates balanced or unclear sentiment."
+        elif self.sentiment_mode in ["TextBlob", "TextBlob (Custom Lexicon)"]:
+            subj = self.result.get("subjectivity", 0)
+            sentiment = "positive" if score > 0 else "negative" if score < 0 else "neutral"
+            subj_text = ("highly subjective" if subj >= 0.7 
+                        else "highly objective" if subj <= 0.3 
+                        else "moderately subjective/objective")
+            base_interp = f"The text is {sentiment} and {subj_text}."
+        else:
+            confidence = score
+            base_interp = f"The model predicts {self.result['sentiment_label'].lower()} sentiment with {confidence:.2%} confidence."
+        return base_interp + timeline_insight
+    def get_method_info(self) -> str:
+        """Get method-specific information"""
+        if self.sentiment_mode in ["VADER", "VADER (Custom Lexicon)"]:
+            info = """
+                <p><b>VADER (Valence Aware Dictionary and sEntiment Reasoner)</b></p>
+                <p>VADER is optimized for social media and short texts. It considers:</p>
+                <ul>
+                    <li>Word order and punctuation</li>
+                    <li>Slang and emoticons</li>
+                    <li>Intensity modifiers</li>
+                </ul>
+                <p><b>Score Interpretation:</b></p>
+                <ul>
+                    <li>Compound Score: [-1 to 1] where:
+                        <ul>
+                            <li>≥ 0.05: Positive</li>
+                            <li>≤ -0.05: Negative</li>
+                            <li>Otherwise: Neutral</li>
+                        </ul>
+                    </li>
+                    <li>Individual scores (pos/neg/neu) represent proportions of text</li>
+                </ul>
+                """
+            if "Custom Lexicon" in self.sentiment_mode:
+                info += """
+                    <p><b>Custom Lexicon Features:</b></p>
+                    <ul>
+                        <li>Uses domain-specific vocabulary</li>
+                        <li>Adapted for specific language patterns</li>
+                        <li>May better handle specialized content</li>
+                    </ul>
+                    """
+        elif self.sentiment_mode in ["TextBlob", "TextBlob (Custom Lexicon)"]:
+            info = """
+                <p><b>TextBlob Sentiment Analysis</b></p>
+                <p>TextBlob provides both polarity and subjectivity analysis:</p>
+                <ul>
+                    <li>Polarity: [-1 to 1] indicating negative to positive</li>
+                    <li>Subjectivity: [0 to 1] indicating objective to subjective</li>
+                </ul>
+                <p><b>Features:</b></p>
+                <ul>
+                    <li>Pattern-based analysis</li>
+                    <li>Natural language processing capabilities</li>
+                    <li>Good for general-purpose text analysis</li>
+                </ul>
+                """
+            if "Custom Lexicon" in self.sentiment_mode:
+                info += """
+                    <p><b>Custom Lexicon Features:</b></p>
+                    <ul>
+                        <li>Custom word polarity definitions</li>
+                        <li>Domain-specific sentiment patterns</li>
+                        <li>Enhanced accuracy for specific use cases</li>
+                    </ul>
+                    """
+        else:
+            info = """
+                <p><b>Flair Sentiment Analysis</b></p>
+                <p>Flair uses state-of-the-art deep learning models:</p>
+                <ul>
+                    <li>Contextual string embeddings</li>
+                    <li>Neural network architecture</li>
+                    <li>Pre-trained on large datasets</li>
+                </ul>
+                <p><b>Score Interpretation:</b></p>
+                <ul>
+                    <li>Confidence score [0 to 1] indicates prediction strength</li>
+                    <li>Higher scores mean more confident predictions</li>
+                </ul>
+                """
+            if "Custom Model" in self.sentiment_mode:
+                info += """
+                    <p><b>Custom Model Features:</b></p>
+                    <ul>
+                        <li>Fine-tuned for specific domains</li>
+                        <li>Adapted to custom language patterns</li>
+                        <li>May handle non-English text better</li>
+                    </ul>
+                    """
+        return info    
 class TopicAnalysisService(QObject):
     """Service for handling topic analysis and keyword extraction operations"""
     analysis_started = Signal()
     analysis_progress = Signal(int)
     analysis_complete = Signal(dict)
     error_occurred = Signal(str)
+    topic_evolution_ready = Signal(object)
     def __init__(self, parent=None):
         super().__init__(parent)
         self.parent = parent
         self.topic_thread = None
         self.keyword_thread = None
         self._cached_results = {}
+        self._cached_evolution = {}
         self._mutex = QMutex()
         self.stop_words = set()
         self.vectorizer = CountVectorizer(
@@ -2257,10 +2875,14 @@ class TopicAnalysisService(QObject):
         )
         self.tfidf = TfidfVectorizer(**self.vectorizer.get_params())
     def analyze_topics(self, text, method='lda', num_topics=5, custom_stopwords=None):
+        """Analyze topics in text"""
         try:
             if not text.strip():
                 raise ValueError("No text provided for analysis")
             self.analysis_started.emit()
+            if self.topic_thread and self.topic_thread.isRunning():
+                self.topic_thread.requestInterruption()
+                self.topic_thread.wait(500)
             self.topic_thread = TopicAnalysisThread(
                 text, 
                 num_topics, 
@@ -2271,14 +2893,21 @@ class TopicAnalysisService(QObject):
                 lambda results: self._handle_topic_results(results, method)
             )
             self.topic_thread.error.connect(self.error_occurred.emit)
+            self.topic_thread.topic_evolution_ready.connect(
+                self._handle_topic_evolution
+            )
             self.topic_thread.start()
         except Exception as e:
             self.error_occurred.emit(f"Failed to start topic analysis: {str(e)}")
     def extract_keywords(self, text, method='tfidf', num_keywords=10, custom_stopwords=None):
+        """Extract keywords from text"""
         try:
             if not text.strip():
                 raise ValueError("No text provided for keyword extraction")
             self.analysis_started.emit()
+            if self.keyword_thread and self.keyword_thread.isRunning():
+                self.keyword_thread.requestInterruption()
+                self.keyword_thread.wait(500)
             self.keyword_thread = KeywordExtractionThread(
                 text, 
                 method, 
@@ -2295,25 +2924,59 @@ class TopicAnalysisService(QObject):
     def _handle_topic_results(self, results, method):
         """Handle topic analysis results"""
         if results:
-            cache_key = f"topics_{method}_{hash(str(results))}"
-            with QMutexLocker(self._mutex):
-                self._cached_results[cache_key] = results
-            self.analysis_complete.emit({
-                'type': 'topics',
-                'method': method,
-                'results': results
-            })
+            try:
+                cache_key = f"topics_{method}_{hash(str(results))}"
+                with QMutexLocker(self._mutex):
+                    self._cached_results[cache_key] = results
+                self.analysis_complete.emit({
+                    'type': 'topics',
+                    'method': method,
+                    'results': results
+                })
+            except Exception as e:
+                logger.error(f"Error handling topic results: {str(e)}")
+                self.error_occurred.emit(f"Error processing topic results: {str(e)}")
+    def _handle_topic_evolution(self, evolution_data):
+        """Handle topic evolution data"""
+        if evolution_data and isinstance(evolution_data, dict):
+            try:
+                method = evolution_data.get('method', 'unknown')
+                cache_key = f"evolution_{method}_{hash(str(evolution_data))}"
+                with QMutexLocker(self._mutex):
+                    self._cached_evolution[cache_key] = evolution_data
+                    if len(self._cached_evolution) > 10:
+                        oldest_key = next(iter(self._cached_evolution))
+                        del self._cached_evolution[oldest_key]
+                self.topic_evolution_ready.emit(evolution_data)
+            except Exception as e:
+                logger.error(f"Error handling topic evolution: {str(e)}")
     def _handle_keyword_results(self, results, method):
         """Handle keyword extraction results"""
         if results:
-            cache_key = f"keywords_{method}_{hash(str(results))}"
-            with QMutexLocker(self._mutex):
-                self._cached_results[cache_key] = results
-            self.analysis_complete.emit({
-                'type': 'keywords',
-                'method': method,
-                'results': results
-            })
+            try:
+                cache_key = f"keywords_{method}_{hash(str(results))}"
+                with QMutexLocker(self._mutex):
+                    self._cached_results[cache_key] = results
+                self.analysis_complete.emit({
+                    'type': 'keywords',
+                    'method': method,
+                    'results': results
+                })
+            except Exception as e:
+                logger.error(f"Error handling keyword results: {str(e)}")
+                self.error_occurred.emit(f"Error processing keyword results: {str(e)}")
+    def get_cached_evolution(self, method=None):
+        """Get cached evolution data for specified method"""
+        with QMutexLocker(self._mutex):
+            if method:
+                for key, data in self._cached_evolution.items():
+                    if key.startswith(f"evolution_{method}_"):
+                        return data
+                return None
+            else:
+                if self._cached_evolution:
+                    return next(reversed(self._cached_evolution.values()))
+                return None
     def cancel_analysis(self):
         """Cancel ongoing analysis operations"""
         if self.topic_thread and self.topic_thread.isRunning():
@@ -2327,6 +2990,7 @@ class TopicAnalysisService(QObject):
         self.cancel_analysis()
         with QMutexLocker(self._mutex):
             self._cached_results.clear()
+            self._cached_evolution.clear()
 """CLASS ANALISIS"""
 class BaseAnalyzer:
     def __init__(self):
@@ -2765,6 +3429,7 @@ class TopicAnalysisThread(QThread):
     """Thread for topic analysis to prevent UI freezing"""
     finished = Signal(list)
     error = Signal(str)
+    topic_evolution_ready = Signal(object)
     def __init__(self, text, num_topics, method='lda', custom_stopwords=None):
         super().__init__()
         self.text = text
@@ -2772,7 +3437,7 @@ class TopicAnalysisThread(QThread):
         self.method = method
         self._is_canceled = False        
         self.setObjectName(f"TopicAnalysisThread_{method}")
-        self._resources = []        
+        self._resources = []
         from nltk.corpus import stopwords
         try:
             default_stopwords = set(stopwords.words('english'))
@@ -2799,6 +3464,8 @@ class TopicAnalysisThread(QThread):
                 del self.corpus
             if hasattr(self, 'dictionary'):
                 del self.dictionary
+            if hasattr(self, 'evolution_data'):
+                del self.evolution_data
             for resource in self._resources:
                 if hasattr(resource, 'close'):
                     try:
@@ -2812,19 +3479,23 @@ class TopicAnalysisThread(QThread):
                         pass
             self._resources.clear()
         except Exception as e:
-            logger.error(f"Error cleaning up topic analysis thread: {e}")        
+            logger.error(f"Error cleaning up topic analysis thread: {e}")
     def run(self):
         try:
             if self._is_canceled or self.isInterruptionRequested():
-                return            
+                return
             if self.method == 'lda':
                 result = self._process_lda()
+                if self._is_running and not self._is_canceled and not self.isInterruptionRequested():
+                    self._analyze_topic_evolution_lda()
             else:
                 result = self._process_nmf()
+                if self._is_running and not self._is_canceled and not self.isInterruptionRequested():
+                    self._analyze_topic_evolution_nmf()
             if self._is_running:
                 self.finished.emit(result)
             if self._is_canceled or self.isInterruptionRequested():
-                return                 
+                return
         except Exception as e:
             self.error.emit(str(e))
     def _process_lda(self):
@@ -2853,6 +3524,8 @@ class TopicAnalysisThread(QThread):
             if self._is_canceled or self.isInterruptionRequested():
                 return []
             lda.fit(dtm)
+            self.vectorizer = vectorizer
+            self.lda_model = lda
             if self._is_canceled or self.isInterruptionRequested():
                 return []
             terms = vectorizer.get_feature_names_out()
@@ -2868,7 +3541,7 @@ class TopicAnalysisThread(QThread):
                 })
             return topics
         except Exception as e:
-            raise Exception(f"LDA analysis failed: {str(e)}")    
+            raise Exception(f"LDA analysis failed: {str(e)}")
     def _process_nmf(self):
         """Process NMF analysis"""
         try:
@@ -2895,6 +3568,8 @@ class TopicAnalysisThread(QThread):
             if self._is_canceled or self.isInterruptionRequested():
                 return []
             nmf.fit(dtm)
+            self.vectorizer = vectorizer
+            self.nmf_model = nmf
             if self._is_canceled or self.isInterruptionRequested():
                 return []
             terms = vectorizer.get_feature_names_out()
@@ -2911,10 +3586,119 @@ class TopicAnalysisThread(QThread):
             return topics
         except Exception as e:
             raise Exception(f"NMF analysis failed: {str(e)}")
+    def _analyze_topic_evolution_lda(self):
+        """Analyze topic evolution using LDA model"""
+        try:
+            if self._is_canceled or self.isInterruptionRequested() or not hasattr(self, 'lda_model'):
+                return
+            segments = self._split_into_segments(self.text, 5)
+            if self._is_canceled or self.isInterruptionRequested():
+                return
+            vectorizer = self.vectorizer
+            lda_model = self.lda_model
+            feature_names = vectorizer.get_feature_names_out()
+            segment_topics = []
+            segment_matrices = []
+            for i, segment in enumerate(segments):
+                if self._is_canceled or self.isInterruptionRequested():
+                    return
+                segment_dtm = vectorizer.transform([segment])
+                segment_topics_matrix = lda_model.transform(segment_dtm)
+                segment_matrices.append(segment_topics_matrix[0])
+                segment_topic_terms = []
+                for topic_idx, topic in enumerate(lda_model.components_):
+                    top_terms_idx = topic.argsort()[:-10-1:-1]
+                    top_terms = [feature_names[i] for i in top_terms_idx]
+                    segment_topic_terms.append(top_terms)
+                segment_topics.append({
+                    'segment_id': i,
+                    'segment_text': segment[:100] + '...' if len(segment) > 100 else segment,
+                    'topic_distribution': segment_topics_matrix[0].tolist(),
+                    'topic_terms': segment_topic_terms
+                })
+            topics_keywords = {}
+            for topic_idx, topic in enumerate(lda_model.components_):
+                top_terms_idx = topic.argsort()[:-10-1:-1]
+                top_terms = [feature_names[i] for i in top_terms_idx]
+                topics_keywords[f'Topic {topic_idx+1}'] = top_terms
+            evolution_data = {
+                'segments': [f'Segment {i+1}' for i in range(len(segments))],
+                'segment_texts': [s[:100] + '...' if len(s) > 100 else s for s in segments],
+                'topics': [f'Topic {i+1}' for i in range(self.num_topics)],
+                'topic_keywords': topics_keywords,
+                'topic_strength': [m.tolist() for m in segment_matrices],
+                'segment_details': segment_topics,
+                'method': 'lda'
+            }
+            self.evolution_data = evolution_data
+            self.topic_evolution_ready.emit(evolution_data)
+        except Exception as e:
+            logger.error(f"Error analyzing LDA topic evolution: {str(e)}")
+    def _analyze_topic_evolution_nmf(self):
+        """Analyze topic evolution using NMF model"""
+        try:
+            if self._is_canceled or self.isInterruptionRequested() or not hasattr(self, 'nmf_model'):
+                return
+            segments = self._split_into_segments(self.text, 5)
+            if self._is_canceled or self.isInterruptionRequested():
+                return
+            vectorizer = self.vectorizer
+            nmf_model = self.nmf_model
+            feature_names = vectorizer.get_feature_names_out()
+            segment_topics = []
+            segment_matrices = []
+            for i, segment in enumerate(segments):
+                if self._is_canceled or self.isInterruptionRequested():
+                    return
+                segment_dtm = vectorizer.transform([segment])
+                segment_topics_matrix = nmf_model.transform(segment_dtm)
+                segment_matrices.append(segment_topics_matrix[0])
+                segment_topic_terms = []
+                for topic_idx, topic in enumerate(nmf_model.components_):
+                    top_terms_idx = topic.argsort()[:-10-1:-1]
+                    top_terms = [feature_names[i] for i in top_terms_idx]
+                    segment_topic_terms.append(top_terms)
+                segment_topics.append({
+                    'segment_id': i,
+                    'segment_text': segment[:100] + '...' if len(segment) > 100 else segment,
+                    'topic_distribution': segment_topics_matrix[0].tolist(),
+                    'topic_terms': segment_topic_terms
+                })
+            topics_keywords = {}
+            for topic_idx, topic in enumerate(nmf_model.components_):
+                top_terms_idx = topic.argsort()[:-10-1:-1]
+                top_terms = [feature_names[i] for i in top_terms_idx]
+                topics_keywords[f'Topic {topic_idx+1}'] = top_terms
+            evolution_data = {
+                'segments': [f'Segment {i+1}' for i in range(len(segments))],
+                'segment_texts': [s[:100] + '...' if len(s) > 100 else s for s in segments],
+                'topics': [f'Topic {i+1}' for i in range(self.num_topics)],
+                'topic_keywords': topics_keywords,
+                'topic_strength': [m.tolist() for m in segment_matrices],
+                'segment_details': segment_topics,
+                'method': 'nmf'
+            }
+            self.evolution_data = evolution_data
+            self.topic_evolution_ready.emit(evolution_data)
+        except Exception as e:
+            logger.error(f"Error analyzing NMF topic evolution: {str(e)}")
+    def _split_into_segments(self, text, num_segments):
+        """Split text into roughly equal segments"""
+        words = text.split()
+        segment_size = max(1, len(words) // num_segments)
+        segments = []
+        for i in range(0, len(words), segment_size):
+            segment = ' '.join(words[i:i + segment_size])
+            segments.append(segment)
+        while len(segments) > num_segments:
+            segments.pop()
+        while len(segments) < num_segments:
+            segments.append("")
+        return segments
     def requestInterruption(self):
         """Override method untuk menginisiasi interupsi thread"""
         super().requestInterruption()
-        self._is_canceled = True            
+        self._is_canceled = True
 class KeywordExtractionThread(QThread):
     """Thread for keyword extraction to prevent UI freezing"""
     finished = Signal(list)
@@ -3073,6 +3857,7 @@ class SentimentAnalysisThread(QThread):
     offline_warning = Signal(str)
     translation_failed = Signal(str)
     translation_progress = Signal(str)
+    sentiment_timeline_ready = Signal(object)
     def __init__(self, text_data, sentiment_mode, vader_analyzer, flair_classifier, 
                  flair_classifier_cuslang, textblob_analyzer=None):
         super().__init__()
@@ -3149,6 +3934,98 @@ class SentimentAnalysisThread(QThread):
         finally:
             if loop.is_running():
                 loop.close()
+    def analyze_textblob_timeline(self, text, use_custom=False):
+        """Analyze sentiment timeline using TextBlob"""
+        try:
+            sentences = []
+            if use_custom and self.textblob_analyzer:
+                from nltk.tokenize import sent_tokenize
+                raw_sentences = sent_tokenize(text)
+                for i, sentence in enumerate(raw_sentences):
+                    if self.isInterruptionRequested():
+                        break
+                    analysis = self.textblob_analyzer.analyze(sentence)
+                    sentences.append({
+                        'index': i,
+                        'sentence': sentence,
+                        'score': analysis['polarity'],
+                        'subjectivity': analysis['subjectivity'],
+                        'label': 'POSITIVE' if analysis['polarity'] > 0 
+                                else 'NEGATIVE' if analysis['polarity'] < 0 
+                                else 'NEUTRAL'
+                    })
+            else:
+                from textblob import TextBlob
+                blob = TextBlob(text)
+                for i, sentence in enumerate(blob.sentences):
+                    if self.isInterruptionRequested():
+                        break
+                    sentiment = sentence.sentiment
+                    sentences.append({
+                        'index': i,
+                        'sentence': str(sentence),
+                        'score': sentiment.polarity,
+                        'subjectivity': sentiment.subjectivity,
+                        'label': 'POSITIVE' if sentiment.polarity > 0 
+                                else 'NEGATIVE' if sentiment.polarity < 0 
+                                else 'NEUTRAL'
+                    })
+            return sentences
+        except Exception as e:
+            logger.error(f"Error in TextBlob timeline analysis: {str(e)}")
+            return None
+    def analyze_vader_timeline(self, text, use_custom=True):
+        """Analyze sentiment timeline using VADER"""
+        try:
+            from nltk.tokenize import sent_tokenize
+            sentences = sent_tokenize(text)
+            timeline = []
+            for i, sentence in enumerate(sentences):
+                if self.isInterruptionRequested():
+                    break
+                scores = self.vader_analyzer.polarity_scores(sentence)
+                timeline.append({
+                    'index': i,
+                    'sentence': sentence,
+                    'score': scores['compound'],
+                    'pos': scores['pos'],
+                    'neg': scores['neg'],
+                    'neu': scores['neu'],
+                    'label': 'POSITIVE' if scores['compound'] >= 0.05 
+                            else 'NEGATIVE' if scores['compound'] <= -0.05 
+                            else 'NEUTRAL'
+                })
+            return timeline
+        except Exception as e:
+            logger.error(f"Error in VADER timeline analysis: {str(e)}")
+            return None
+    def analyze_flair_timeline(self, text, use_custom=False):
+        """Analyze sentiment timeline using Flair"""
+        try:
+            from nltk.tokenize import sent_tokenize
+            from flair.data import Sentence
+            classifier = self.flair_classifier_cuslang if use_custom else self.flair_classifier
+            if not classifier:
+                raise ValueError(f"{'Custom' if use_custom else 'Default'} Flair model not initialized")
+            sentences = sent_tokenize(text)
+            timeline = []
+            for i, sentence_text in enumerate(sentences):
+                if self.isInterruptionRequested():
+                    break
+                sentence = Sentence(sentence_text)
+                classifier.predict(sentence)
+                label = sentence.labels[0]
+                timeline.append({
+                    'index': i,
+                    'sentence': sentence_text,
+                    'score': label.score,
+                    'label': label.value,
+                    'confidence': label.score
+                })
+            return timeline
+        except Exception as e:
+            logger.error(f"Error in Flair timeline analysis: {str(e)}")
+            return None                
     def analyze_textblob(self, text, use_custom=False):
         if use_custom and self.textblob_analyzer:
             analysis = self.textblob_analyzer.analyze(text)
@@ -3307,6 +4184,34 @@ class SentimentAnalysisThread(QThread):
                             result["negative_score"] = sent.labels[0].score if sent.labels[0].value == "NEGATIVE" else 0
                         elif label == "NEUTRAL":
                             result["neutral_score"] = sent.labels[0].score if sent.labels[0].value == "NEUTRAL" else 0
+            timeline_data = None
+            try:
+                if self.sentiment_mode == "TextBlob":
+                    if needs_translation:
+                        timeline_data = self.analyze_textblob_timeline(text_to_analyze, False)
+                    else:
+                        timeline_data = self.analyze_textblob_timeline(self.text_data, False)
+                elif self.sentiment_mode == "TextBlob (Custom Lexicon)":
+                    timeline_data = self.analyze_textblob_timeline(self.text_data, True)
+                elif self.sentiment_mode == "VADER":
+                    if needs_translation:
+                        timeline_data = self.analyze_vader_timeline(text_to_analyze, False)
+                    else:
+                        timeline_data = self.analyze_vader_timeline(self.text_data, False)
+                elif self.sentiment_mode == "VADER (Custom Lexicon)":
+                    timeline_data = self.analyze_vader_timeline(self.text_data, True)
+                elif self.sentiment_mode == "Flair":
+                    if needs_translation:
+                        timeline_data = self.analyze_flair_timeline(text_to_analyze, False)
+                    else:
+                        timeline_data = self.analyze_flair_timeline(self.text_data, False)
+                elif self.sentiment_mode == "Flair (Custom Model)":
+                    timeline_data = self.analyze_flair_timeline(self.text_data, True)
+                if timeline_data:
+                    result['sentiment_timeline'] = timeline_data
+                    self.sentiment_timeline_ready.emit(timeline_data)
+            except Exception as e:
+                logger.error(f"Error analyzing sentiment timeline: {e}")
             if self.isInterruptionRequested():
                 return
             self.sentiment_analyzed.emit(result)
@@ -3647,6 +4552,7 @@ class TopicAnalysisTab(QWidget):
         self.topic_service.analysis_started.connect(self._on_analysis_started)
         self.topic_service.analysis_complete.connect(self._on_analysis_complete)
         self.topic_service.error_occurred.connect(self._on_analysis_error)
+        self.topic_service.topic_evolution_ready.connect(self._on_topic_evolution_ready)        
         self.initUI()
     def initUI(self):
         """Initialize the Topic Analysis Tab UI"""
@@ -3766,9 +4672,13 @@ class TopicAnalysisTab(QWidget):
             self.parent_widget.set_progress('keywords', False)
             self.parent_widget.button_manager.restore_states()
         if result['type'] == 'topics':
+            self.topic_evolution_data = getattr(self, 'topic_evolution_data', None)
             self.show_results_dialog(result['method'], result['results'])
         elif result['type'] == 'keywords':
             self.show_keyword_dialog(result['method'], result['results'])
+    def _on_topic_evolution_ready(self, evolution_data):
+        """Handle topic evolution data"""
+        self.topic_evolution_data = evolution_data
     def _on_analysis_error(self, error_msg):
         """Handle analysis errors"""
         if self.parent_widget:
@@ -3783,8 +4693,11 @@ class TopicAnalysisTab(QWidget):
         self.analyze_topics_btn.setEnabled(has_text)
         self.extract_keywords_btn.setEnabled(has_text)
     def show_results_dialog(self, method: str, results: dict):
-        dialog = TopicAnalysisResultDialog(method, results, self)
-        dialog.show()    
+        """Show topic analysis results dialog"""
+        evolution_data = getattr(self, 'topic_evolution_data', None)
+        dialog = TopicAnalysisResultDialog(method, results, self, evolution_data)
+        dialog.show()
+        self.topic_evolution_data = None   
     def show_keyword_dialog(self, method: str, results: list):
         """Show dialog with keyword extraction results"""
         dialog = KeywordExtractionResultDialog(method, results, parent=self)
@@ -4523,8 +5436,8 @@ class AppUI(QMainWindow):
         filename_container = QFrame()
         filename_container.setStyleSheet("""
             QFrame { 
-                border: 1px solid #c0c0c0; 
-                background: transparent;
+                border: opx solid #c0c0c0; 
+                background: #ffffff;
                 padding: 0px;
                 margin: 0px;
             }
@@ -5188,16 +6101,13 @@ class AppUI(QMainWindow):
     def show_about(self):
         """Show about dialog using DialogFactory with caching"""
         if not self._about_dialog:
-            # Decode base64 content sekali saja
             about_text = base64.b64decode(AppConstants.ABOUT_TEXT.encode()).decode()
             about_text = about_text.replace("{logo_path}", str(logo_path.as_uri()))
-            # Buat dialog sekali saja
             self._about_dialog = DialogFactory.create_info_dialog(
                 self, "About Textplora", about_text, 
-                modal=True,  # Ubah ke modal=True
-                min_size=(400, 300)  # Ukuran lebih kecil
+                modal=True,
+                min_size=(400, 300)
             )
-            # Pastikan dialog dihapus saat ditutup
             self._about_dialog.finished.connect(self._cleanup_about_dialog)
         self._about_dialog.show()
         self._about_dialog.raise_()
